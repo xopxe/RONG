@@ -2,21 +2,17 @@ local M = {}
 
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
-
---local broadcast = require 'lib.networking'.broadcast
---local ivs = require 'lib.inventory_view_sets'
---local messages, view, view_meta = ivs.messages, ivs.view, ivs.view_meta
-
 local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
-local networking = require 'lib.networking'
 
-local view_merge = function(rong, v, vi)
+local view_merge = function(rong, vi)
   local now = sched.get_time()
+  
+  local v=rong.view
 
   for sid, s in pairs(vi) do
-    log('RONG', 'DEBUG', 'merging subscription: %s', tostring(sid))
+    log('RONG', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local meta = rong.view_meta[sid]
     if not rong.view[sid] then
       v:add(sid, s)
@@ -28,18 +24,21 @@ local view_merge = function(rong, v, vi)
       local sl = v[sid]
       if sl.seq < s.seq then
         sl.seq = s.seq
+        --FIXME??
+        sl.visited = s.visited
+        sl.visited[rong.conf.name] = true
+        --/FIXME??
       end    
     end
     meta.last_seen = now
   end
 end
 
-
 local process_incoming_view = function (rong, m)
   log('RONG', 'DEBUG', 'Incomming view: %s', tostring(m))
   
   --routing
-  view_merge( rong, view, m.view )
+  view_merge( rong, m.view )
   
   --[[
   -- forwarding
@@ -49,8 +48,11 @@ local process_incoming_view = function (rong, m)
   --]]
 end
 
-M.new_incomming_handler = function(rong)
-  return function (sktd, data, err, part)
+
+M.new = function(rong)
+  local msg = {}
+    
+  msg.incomming_handler = function (sktd, data, err, part)
     if data then 
       log('RONG', 'DEBUG', 'Incomming data: %s', tostring(data))
       local m = decode_f(data)
@@ -61,22 +63,28 @@ M.new_incomming_handler = function(rong)
       elseif m.subrequest then
       end
     else
-      log('RONG', 'DEBUG', 'Incomming error: %s', tostring(err))
+      log('RONG', 'DEBUG', 'Incomming error: %s %s', 
+        tostring(err), tostring(part))
     end
     return true
   end
-end
 
-M.broadcast_view = function (rong)
-  for k, v in pairs (rong.view:own()) do
-    v.seq = v.seq + 1
+  local net = require 'lib.networking'.new(rong)
+  net:build_socket(msg.incomming_handler)
+
+  msg.broadcast_view = function ()
+    for k, v in pairs (rong.view:own()) do
+      v.seq = v.seq + 1
+    end
+    local view_emit = {--[[emitter=assert(conf.name),--]] 
+      view=rong.view, 
+    }
+    local s = assert(encode_f(view_emit)) --FIXME tamaño!
+    log('RONG', 'DEBUG', 'Broadcast view: %s', tostring(s))
+    net:broadcast( s )
   end
-  local view_emit = {--[[emitter=assert(conf.name),--]] 
-    view=rong.view, 
-  }
-  local s = assert(encode_f(view_emit)) --FIXME tamaño!
-  log('RONG', 'DEBUG', 'Broadcast view: %s', tostring(s))
-  networking.broadcast( s )
+
+  return msg
 end
 
 return M
