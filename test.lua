@@ -42,7 +42,7 @@ local s = rong:subscribe(
     {'q2', '=', 'A2'},
   }
 )
-sched.sigrun(s, function(a, b) print ('NNN', a, b) end)
+sched.sigrun({s}, function(a, b) print ('NNN', a, b) end)
 
 rong:notificate(
   'N1@'..conf.name,
