@@ -1,7 +1,6 @@
-module(..., package.seeall);
+local M = {}
 
-
-function make_TrackedTable ()
+M.make_TrackedTable = function ()
 	local function make_TrackedTable_MT ()
 		local n = 0
 		local MT={
@@ -26,6 +25,8 @@ function make_TrackedTable ()
 	end
 	return setmetatable({},make_TrackedTable_MT())
 end
+
+return M
 
 --[[
 T=make_TrackedTable()

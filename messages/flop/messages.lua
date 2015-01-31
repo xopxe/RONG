@@ -10,7 +10,7 @@ local view_merge = function(rong, vi)
   local now = sched.get_time()
   
   local v=rong.view
-
+  
   for sid, s in pairs(vi) do
     log('RONG', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local meta = rong.view_meta[sid]
@@ -34,11 +34,11 @@ local view_merge = function(rong, vi)
   end
 end
 
-local process_incoming_view = function (rong, m)
-  log('RONG', 'DEBUG', 'Incomming view: %s', tostring(m))
-  
+
+
+local process_incoming_view = function (rong, view)
   --routing
-  view_merge( rong, m.view )
+  view_merge( rong, view )
   
   --[[
   -- forwarding
@@ -51,27 +51,7 @@ end
 
 M.new = function(rong)
   local msg = {}
-    
-  msg.incomming_handler = function (sktd, data, err, part)
-    if data then 
-      log('RONG', 'DEBUG', 'Incomming data: %s', tostring(data))
-      local m = decode_f(data)
-      if m.view then
-        process_incoming_view(rong, m)
-      elseif m.messages then
-      elseif m.subscribe then
-      elseif m.subrequest then
-      end
-    else
-      log('RONG', 'DEBUG', 'Incomming error: %s %s', 
-        tostring(err), tostring(part))
-    end
-    return true
-  end
-
-  local net = require 'lib.networking'.new(rong)
-  net:build_socket(msg.incomming_handler)
-
+  
   msg.broadcast_view = function ()
     for k, v in pairs (rong.view:own()) do
       v.seq = v.seq + 1
@@ -81,9 +61,13 @@ M.new = function(rong)
     }
     local s = assert(encode_f(view_emit)) --FIXME tamaño!
     log('RONG', 'DEBUG', 'Broadcast view: %s', tostring(s))
-    net:broadcast( s )
+    rong.net:broadcast( s )
   end
-
+  
+  msg.incomming = {
+    view = process_incoming_view,
+  }
+  
   return msg
 end
 
