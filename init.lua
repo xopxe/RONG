@@ -16,9 +16,7 @@ M.new = function(conf)
     conf = conf,
     signals = loadfile 'lib/signals.lua'(),
     inv = ivs.inv,
-    inv_meta = ivs.inv_meta,
     view = ivs.view,
-    view_meta = ivs.view_meta,
   }, {
     __index = M,
   })

@@ -1,6 +1,7 @@
 local M = {}
 
 local sched = require 'lumen.sched'
+local log = require 'lumen.log'
 local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
@@ -19,7 +20,7 @@ M.new = function (rong)
         local m = {}
         m[nid]=n
         local s = encode_f( {notifs=m} ) --FIXME tamaño!
-        print ('!!!!*', s)
+          log('RONG', 'DEBUG', 'Broadcasting notification: %s', tostring(s))
         rong.net:broadcast( s )
       end)
     end,

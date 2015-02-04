@@ -3,13 +3,13 @@ local M = {}
 local sched = require("lumen.sched")
 
 local function mesage_quality(rong, m)
-  local view, view_meta = rong.view, rong.view_meta
+  local view = rong.view
   
 	local q = 0
 	--accumulated quality for a message
-	for s,_ in pairs(rong.inv_meta[m].matches) do
+	for s,_ in pairs(m.matches) do
 		if not view.own[s] then --don't accumulate quality from own subs
-			q = q + view_meta[s].p_encounter 
+			q = q + s.meta.p_encounter 
 		end
 	end
 	return q
@@ -36,7 +36,7 @@ local function find_worsts(rong)
 end
 
 M.find_replaceable_homogeneous = function (rong) --FIXME
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
 	local now = sched.get_time()
 
@@ -92,7 +92,7 @@ M.find_replaceable_homogeneous = function (rong) --FIXME
 end
 
 M.find_replaceable_seen_rate = function (rong) --FIXME
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
 	local now = sched.get_time()
 
@@ -128,7 +128,7 @@ M.find_replaceable_seen_rate = function (rong) --FIXME
 end
 
 M.find_replaceable_seen = function (rong) --FIXME
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
 	local now = sched.get_time()
 
@@ -162,7 +162,7 @@ M.find_replaceable_seen = function (rong) --FIXME
 end
 
 M.find_replaceable_diversity_array = function (rong) --FIXME
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
 	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
@@ -238,7 +238,7 @@ end
 
 
 M.find_replaceable_variable_aging = function (rong) --FIXME
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
   
 	if inv.own:len() < conf.reserved_owns then
@@ -280,7 +280,7 @@ M.find_replaceable_variable_aging = function (rong) --FIXME
 end
 
 M.find_replaceable_window = function (rong) --FIXME
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
 	local now = sched.get_time()
 
@@ -327,7 +327,7 @@ end
 
 
 function M.find_replaceable_fifo (rong)
-  local inv, inv_meta = rong.inv, rong.inv_meta
+  local inv = rong.inv
   local conf = rong.conf
 
 	if inv.own:len() < conf.reserved_owns then
@@ -340,7 +340,7 @@ function M.find_replaceable_fifo (rong)
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
-      local meta = inv_meta[m]
+      local meta = m.meta
 			--conf.log('$$$$', min_ts_mid, min_ts, m.init_time, m.message._in_transit )
 			local em=meta.init_time - meta.message._in_transit --estimated emission time
 			--conf.log('looking for a replacement ---- ', mid, em)

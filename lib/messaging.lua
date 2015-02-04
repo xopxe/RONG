@@ -6,10 +6,7 @@ local sched = require 'lumen.sched'
 --selects messages to be sent out in response to views received
 --parameters should be set of subscription ids.
 M.select_matching = function (rong, vs)
-  local inv = rong.inv
-  local inv_meta = rong.inv_meta
-  local view = rong.view
-  local view_meta = rong.view_meta
+  local inv, view  = rong.inv, rong.view
   local conf = rong.conf
   local pending = rong.pending
 
@@ -17,14 +14,13 @@ M.select_matching = function (rong, vs)
 
 	local now=sched.get_time()
 	for mid, m in pairs(inv) do
-		local matches=inv_meta[m].matches
+		local matches=m.matches
 		for sid, _ in pairs(vs) do
 			local s=view[sid]
 			if s and matches[s] then
-				view_meta[s].last_success=now
-				local own=view_meta[s].own
-        if now-inv_meta[m].last_seen > conf.delay_message_emit then
-          pending:add(mid, m)
+				s.meta.last_success=now
+        if now-m.meta.last_seen > conf.delay_message_emit then
+          pending:add(mid, m.data)
 				end
 			end
 		end

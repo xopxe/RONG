@@ -12,31 +12,29 @@ local view_merge = function(rong, vi)
   local now = sched.get_time()
   
   local view = rong.view
-  local meta = rong.view_meta
   local conf = rong.conf
     
   for sid, si in pairs(vi) do
     log('RONG', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local sl = view[sid]
     if sl then
-      local metasl = meta[sl]
+      local metasl = sl.meta
       assert(si.p, "Malformed view, missing p")
 			if metasl.p<si.p and not view.own[sid] then
 				local p_old=metasl.p
 				metasl.p = p_old + ( 1 - p_old ) * si.p * conf.P_encounter
 			end
     else
-      sl = si.filter
-      view:add(sid, sl, false)
-      meta[sl].p = si.p --TODO how to initialize p from incomming?
+      view:add(sid, si.filter, false)
+      sl = view[sid]
+      sl.meta.p = si.p --TODO how to initialize p from incomming?
     end
-    meta[sl].last_seen = now
+    sl.meta.last_seen = now
   end
 end
 
 local notifs_merge = function (rong, notifs)
   local inv = rong.inv
-  local inv_meta = rong.inv_meta
   local conf = rong.conf
   local pending = rong.pending
   local ranking_find_replaceable = rong.ranking_find_replaceable
@@ -45,7 +43,7 @@ local notifs_merge = function (rong, notifs)
   
   --messages maintenance 
 	for nid, n in pairs(inv) do
-    local meta = inv_meta[n]
+    local meta = n.meta
 		if inv.own[nid] then
 			if now - meta.init_time > conf.max_owning_time then
 				print("==========Purging old own notif", nid)
@@ -62,23 +60,24 @@ local notifs_merge = function (rong, notifs)
 		end
 	end
 
-  for nid, n in pairs(notifs) do
+  for nid, data in pairs(notifs) do
 		local ni=inv[nid]
 		if ni then
-      local meta = inv_meta[ni]
+      local meta = ni.meta
 			meta.last_seen = now
 			meta.seen=meta.seen+1
 			pending:del(nid) --if we were to emit this, don't.
 		else	
-      inv:add(nid, n, false)
+      inv:add(nid, data, false)
       rong.messages.init_notification(nid) --FIXME refactor?
+      local n = inv[nid]
       
       -- signal arrival of new notification to subscriptions
-      local matches=inv_meta[n].matches
+      local matches=n.matches
       for sid, s in pairs(rong.view.own) do
         if matches[s] then
           print ('!!!arrived!', nid)
-          sched.signal(s, n)
+          sched.signal(s, data)
         end
       end
       
@@ -100,14 +99,14 @@ local apply_aging = function (rong)
   local conf = rong.conf
   
   for sid, s in pairs(view) do
-    local meta = rong.view_meta[s]
+    local meta = s.meta
     if not view.own[sid] then
       meta.p=meta.p * conf.gamma^(now-meta.last_seen)
       meta.last_seen=now
     end
     --delete if p_encounter too small
     if meta.p < (conf.min_p or 0) then
-      log('RONG', 'purging subscription %s with p=%s',
+      log('RONG', 'Purging subscription %s with p=%s',
         tostring(sid), tostring(meta.p_encounter))
       view:del(sid)
     end
@@ -136,11 +135,11 @@ M.new = function(rong)
   msg.broadcast_view = function ()
     apply_aging(rong)
     local view_emit = {}
-    local meta = rong.view_meta
     for sid, s in pairs (rong.view) do
+      local meta = s.meta
       local sr = {
-        filter = s,
-        p = meta[s].p,
+        filter = s.filter,
+        p = meta.p,
       }
       view_emit[sid] = sr
     end
@@ -164,7 +163,7 @@ M.new = function(rong)
   msg.init_subscription = function (sid)
     local now = sched.get_time()
     local s = assert(rong.view[sid])
-    local meta = assert(rong.view_meta[s])
+    local meta = s.meta
     meta.init_time = now
     meta.last_seen = now
     meta.p = 1.0
@@ -173,7 +172,7 @@ M.new = function(rong)
   msg.init_notification = function (nid)
     local now = sched.get_time()
     local n = assert(rong.inv[nid])
-    local meta = assert(rong.inv_meta[n])    
+    local meta = n.meta
     meta.init_time=now
     meta.last_seen=now
     meta.emited=0
