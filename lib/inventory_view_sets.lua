@@ -79,8 +79,8 @@ local function make_SubscriptionTable ()
 					end
 				end
  			end,
-	
-  del=function(self, key)
+    
+      del=function(self, key)
 				if rawget(self, key) then
 					n = n - 1
           view_meta[rawget(self, key)] = nil
@@ -91,9 +91,7 @@ local function make_SubscriptionTable ()
 			len=function(self)
 				return n
 			end,
-			own=function(self)
-				return own_table
-			end
+      own = own_table
 		}
 		MT.__index=MT
 		return MT

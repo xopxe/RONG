@@ -17,7 +17,7 @@ local view_merge = function(rong, vi)
     if not rong.view[sid] then
       v:add(sid, s)
       meta = rong.view_meta[sid]
-      meta.ts = now
+      meta.init_time = now
       --v[sid].visited[conf.name] = true
       s.visited[rong.conf.name] = true
     else
@@ -53,7 +53,7 @@ M.new = function(rong)
   local msg = {}
   
   msg.broadcast_view = function ()
-    for k, v in pairs (rong.view:own()) do
+    for k, v in pairs (rong.view.own) do
       v.seq = v.seq + 1
     end
     local view_emit = {--[[emitter=assert(conf.name),--]] 

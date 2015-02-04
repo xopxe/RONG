@@ -21,7 +21,7 @@ local view_merge = function(rong, vi)
     if sl then
       local metasl = meta[sl]
       assert(si.p, "Malformed view, missing p")
-			if metasl.p<si.p and not view:own()[sid] then
+			if metasl.p<si.p and not view.own[sid] then
 				local p_old=metasl.p
 				metasl.p = p_old + ( 1 - p_old ) * si.p * conf.P_encounter
 			end
@@ -46,8 +46,8 @@ local notifs_merge = function (rong, notifs)
   --messages maintenance 
 	for nid, n in pairs(inv) do
     local meta = inv_meta[n]
-		if inv:own()[nid] then
-			if now - meta.ts > conf.max_owning_time then
+		if inv.own[nid] then
+			if now - meta.init_time > conf.max_owning_time then
 				print("==========Purging old own notif", nid)
 				inv:del(nid)
 			elseif meta.emited >= conf.max_ownnotif_transmits then
@@ -72,6 +72,16 @@ local notifs_merge = function (rong, notifs)
 		else	
       inv:add(nid, n, false)
       rong.messages.init_notification(nid) --FIXME refactor?
+      
+      -- signal arrival of new notification to subscriptions
+      local matches=inv_meta[n].matches
+      for sid, s in pairs(rong.view.own) do
+        if matches[s] then
+          print ('!!!arrived!', nid)
+          sched.signal(s, n)
+        end
+      end
+      
 			--make sure table doesn't grow beyond inventory_size
 			while inv:len()>conf.inventory_size do
 				local mid=ranking_find_replaceable(rong)
@@ -91,7 +101,7 @@ local apply_aging = function (rong)
   
   for sid, s in pairs(view) do
     local meta = rong.view_meta[s]
-    if not view:own()[sid] then
+    if not view.own[sid] then
       meta.p=meta.p * conf.gamma^(now-meta.last_seen)
       meta.last_seen=now
     end
@@ -114,17 +124,6 @@ end
 
 local process_incoming_notifs = function (rong, notifs)
   notifs_merge(rong, notifs)
-  
-  -- notify library's user
-  for mid, m in pairs(notifs) do
-		local matches=inv_meta[m].matches
-		for sid, s in pairs(rong.views:own()) do
-			if matches[s] then
-        print ('!!!arrived!', mid)
-        sched.signal(s, m)
-      end
-    end
-  end
 end
 
 M.new = function(rong)  
@@ -146,10 +145,11 @@ M.new = function(rong)
       view_emit[sid] = sr
     end
     
+    --[[
     for k,v in pairs (view_emit['SUB1@rongnode'] or {}) do
       print('>', type(k),k,type(v),v)
     end
-    
+    --]]
     
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
     log('RONG', 'DEBUG', 'Broadcast view: %s', tostring(ms))

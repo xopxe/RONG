@@ -22,7 +22,7 @@ M.new = function(conf)
   }, {
     __index = M,
   })
-  local messages = assert(require ('messages.'..conf.protocol)).new(rong)
+  local messages = assert(require ('rong.messages.'..conf.protocol)).new(rong)
   rong.messages = messages
   
   local incomming_handler = function (data, err)

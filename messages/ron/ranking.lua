@@ -1,6 +1,6 @@
 local M = {}
 
-local socket = require("socket")
+local sched = require("lumen.sched")
 
 local function mesage_quality(rong, m)
   local view, view_meta = rong.view, rong.view_meta
@@ -8,7 +8,7 @@ local function mesage_quality(rong, m)
 	local q = 0
 	--accumulated quality for a message
 	for s,_ in pairs(rong.inv_meta[m].matches) do
-		if not view:own()[s] then --don't accumulate quality from own subs
+		if not view.own[s] then --don't accumulate quality from own subs
 			q = q + view_meta[s].p_encounter 
 		end
 	end
@@ -17,7 +17,7 @@ end
 
 local function find_worsts(rong)
   local inv = rong.inv
-  local own = inv.own()
+  local own = inv.own
 	local worst_id, worst_q, worsts
 	for mid, m in pairs(inv) do
 		if not own[m] then
@@ -35,23 +35,24 @@ local function find_worsts(rong)
 	return worsts, worst_q
 end
 
-M.find_replaceable_homogeneous = function (messages) --FIXME
-	local ownmessages=messages:own()
-	local now = socket.gettime()
+M.find_replaceable_homogeneous = function (rong) --FIXME
+  local inv, inv_meta = rong.inv, rong.inv_meta
+  local conf = rong.conf
+	local now = sched.get_time()
 
-	if ownmessages:len() < configuration.reserved_owns then
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
 		local worsts, worst_q=find_worsts(messages)
 
-		local number_of_ranges = configuration.number_of_ranges
-		local ranking_window = configuration.ranking_window
+		local number_of_ranges = conf.number_of_ranges
+		local ranking_window = conf.ranking_window
 		local range_count={}
 		for i=1,number_of_ranges do range_count[i] = {} end
 		--classify in ranges
 		for _, mid in ipairs(worsts) do
 			local m = messages[mid]
-			local age=(now-m.ts) + m.message._in_transit --estimated emission time
+			local age=(now-m.init_time) + m.message._in_transit --estimated emission time
 			if age > ranking_window then return mid end
 			local range = math.floor(number_of_ranges * (age / ranking_window))+1
 			if range > number_of_ranges then range = number_of_ranges end 
@@ -69,7 +70,7 @@ M.find_replaceable_homogeneous = function (messages) --FIXME
 		--in longest range find most seen
 		local max_seen, max_seen_mid
 		for _, mid in ipairs(range_count[longest_range_i]) do
-			local m = messages[mid]
+			local m = inv[mid]
 			local seen = m.seen
 			if not m.own and (not max_seen_mid or max_seen < seen) then
 				max_seen_mid, max_seen = mid, seen
@@ -77,12 +78,12 @@ M.find_replaceable_homogeneous = function (messages) --FIXME
 		end
 		
 		return max_seen_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(inv.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 
@@ -90,34 +91,35 @@ M.find_replaceable_homogeneous = function (messages) --FIXME
 	end	
 end
 
-M.find_replaceable_seen_rate = function (messages) --FIXME
-	local ownmessages=messages:own()
-	local now = socket.gettime()
+M.find_replaceable_seen_rate = function (rong) --FIXME
+  local inv, inv_meta = rong.inv, rong.inv_meta
+  local conf = rong.conf
+	local now = sched.get_time()
 
-	if ownmessages:len() < configuration.reserved_owns then
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(messages)
+		local worsts, worst_q=find_worsts(inv)
 
 		--between the worst, find most seen
 		local max_seenrate, max_seenrate_mid
 		for _, mid in ipairs(worsts) do
-			local m = messages[mid]
-			local age = now - m.ts
+			local m = inv[mid]
+			local age = now - m.init_time
 			local seenrate = m.seen / age
-			if not m.own and age > configuration.min_time_for_averaging
+			if not m.own and age > conf.min_time_for_averaging
 			and (not max_seenrate_mid or max_seenrate < seenrate) then
 				max_seenrate_mid, max_seenrate = mid, seenrate
 			end
 		end
 		
 		return max_seenrate_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(messages.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 
@@ -125,19 +127,20 @@ M.find_replaceable_seen_rate = function (messages) --FIXME
 	end	
 end
 
-M.find_replaceable_seen = function (messages) --FIXME
-	local ownmessages=messages:own()
-	local now = socket.gettime()
+M.find_replaceable_seen = function (rong) --FIXME
+  local inv, inv_meta = rong.inv, rong.inv_meta
+  local conf = rong.conf
+	local now = sched.get_time()
 
-	if ownmessages:len() < configuration.reserved_owns then
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(messages)
+		local worsts, worst_q=find_worsts(inv)
 
 		--between the worst, find most seen
 		local max_seen, max_seen_mid
 		for _, mid in ipairs(worsts) do
-			local m = messages[mid]
+			local m = inv[mid]
 			local seen = m.seen
 			if not m.own and (not max_seen_mid or max_seen < seen) then
 				max_seen_mid, max_seen = mid, seen
@@ -145,12 +148,12 @@ M.find_replaceable_seen = function (messages) --FIXME
 		end
 		
 		return max_seen_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(inv.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 
@@ -158,55 +161,55 @@ M.find_replaceable_seen = function (messages) --FIXME
 	end	
 end
 
-M.find_replaceable_diversity_array = function (messages) --FIXME
-	local ownmessages=messages:own()
-
-	if ownmessages:len() < configuration.reserved_owns then
+M.find_replaceable_diversity_array = function (rong) --FIXME
+  local inv, inv_meta = rong.inv, rong.inv_meta
+  local conf = rong.conf
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(messages)
-		--configuration.log('looking for a replacement', #worsts, worst_q)
+		local worsts, worst_q=find_worsts(inv)
+		--conf.log('looking for a replacement', #worsts, worst_q)
 		
 		local diversity_array = {}
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
-			local m = messages[mid]
+			local m = inv[mid]
 			if m.discard_sample then
 				diversity_array[#diversity_array + 1] = mid
 			end
-			--configuration.log('$$$$', min_ts_mid, min_ts, m.ts, m.message._in_transit )
-			local em=m.ts - m.message._in_transit --estimated emission time
-			--configuration.log('looking for a replacement ---- ', mid, em)
+			--conf.log('$$$$', min_ts_mid, min_ts, m.init_time, m.message._in_transit )
+			local em=m.init_time - m.message._in_transit --estimated emission time
+			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=-m.emited
 			--local em=m.message.notification_id
 			if not m.own 
 			and (not min_ts_mid or min_ts > em) 
-			and m.emited > configuration.min_n_broadcasts 
+			and m.emited > conf.min_n_broadcasts 
 			and not m.discard_sample then
 				min_ts_mid, min_ts = mid, em
 			end
 		end
 		
-		if min_ts_mid and math.random() <= configuration.diversity_survival_quotient then
-			messages[min_ts_mid].discard_sample = true
-			if #diversity_array > configuration.max_size_diversity_array then				
+		if min_ts_mid and math.random() <= conf.diversity_survival_quotient then
+			inv[min_ts_mid].discard_sample = true
+			if #diversity_array > conf.max_size_diversity_array then				
 				min_ts_mid = diversity_array[math.random(#diversity_array)]
-				configuration.log("Diversity array full. Replacing.")
+				conf.log("Diversity array full. Replacing.")
 			else
 				min_ts_mid = nil
-				configuration.log("Populating diversity array.")
+				conf.log("Populating diversity array.")
 			end
 		end
 		
 		return min_ts_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(inv.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 
@@ -227,47 +230,48 @@ local function string_hash (str)
 end
 
 local function aging_hash (mid)
-	myname_hash = myname_hash or string_hash(configuration.my_name)
+	myname_hash = myname_hash or string_hash(conf.my_name)
 	local temp_hash = myname_hash + string_hash(mid)
 
-	return (math.fmod(temp_hash,100) * ((1 - configuration.max_aging_slower) / 100) ) + configuration.max_aging_slower
+	return (math.fmod(temp_hash,100) * ((1 - conf.max_aging_slower) / 100) ) + conf.max_aging_slower
 end
 
 
-M.find_replaceable_variable_aging = function (messages) --FIXME
-	local ownmessages=messages:own()
-
-	if ownmessages:len() < configuration.reserved_owns then
+M.find_replaceable_variable_aging = function (rong) --FIXME
+  local inv, inv_meta = rong.inv, rong.inv_meta
+  local conf = rong.conf
+  
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(messages)
-		--configuration.log('looking for a replacement', #worsts, worst_q)
+		local worsts, worst_q=find_worsts(inv)
+		--conf.log('looking for a replacement', #worsts, worst_q)
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
-			local m = messages[mid]
+			local m = inv[mid]
 
 			if not m.aging_slower and not m.own then
 				m.aging_slower = aging_hash(mid)
 			end
 
-			local em=(m.ts - m.message._in_transit * m.aging_slower) --estimated emission time
+			local em=(m.init_time - m.message._in_transit * m.aging_slower) --estimated emission time
 
 			if not m.own 
 			and (not min_ts_mid or min_ts > em) 
-			and m.emited > configuration.min_n_broadcasts then
+			and m.emited > conf.min_n_broadcasts then
 				min_ts_mid, min_ts = mid, em
 			end
 		end
 
 		return min_ts_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(messages.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 
@@ -275,21 +279,22 @@ M.find_replaceable_variable_aging = function (messages) --FIXME
 	end
 end
 
-M.find_replaceable_window = function (messages) --FIXME
-	local ownmessages=messages:own()
-	local now = socket.gettime()
+M.find_replaceable_window = function (rong) --FIXME
+  local inv, inv_meta = rong.inv, rong.inv_meta
+  local conf = rong.conf
+	local now = sched.get_time()
 
-	if ownmessages:len() < configuration.reserved_owns then
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(messages)
+		local worsts, worst_q=find_worsts(inv)
 		local candidate_random = {}
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
-			local m = messages[mid]
-			local em=m.ts - m.message._in_transit --estimated emission time
+			local m = inv[mid]
+			local em=m.init_time - m.message._in_transit --estimated emission time
 			if not m.message.own then
 				candidate_random[#candidate_random+1]=mid
 			end
@@ -300,19 +305,19 @@ M.find_replaceable_window = function (messages) --FIXME
 		
 		--if oldest still too young, select one at random between candidates
 		if #candidate_random>0 
-		and (not min_ts or min_ts > now-configuration.period_of_random_survival) then
+		and (not min_ts or min_ts > now-conf.period_of_random_survival) then
 			local i=math.random(1, #candidate_random)
 			min_ts_mid = candidate_random[i]
-			worst_q = mesage_quality(messages[min_ts_mid])
+			worst_q = mesage_quality(inv[min_ts_mid])
 		end
 
 		return min_ts_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(inv.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 
@@ -323,25 +328,24 @@ end
 
 function M.find_replaceable_fifo (rong)
   local inv, inv_meta = rong.inv, rong.inv_meta
-	local own = inv:own()
   local conf = rong.conf
 
-	if own:len() < conf.reserved_owns then
+	if inv.own:len() < conf.reserved_owns then
 		--guarantee for owns satisfied. find replacement between not owns
 
 		local worsts, worst_q=find_worsts(rong)
-		--configuration.log('looking for a replacement', #worsts, worst_q)
+		--conf.log('looking for a replacement', #worsts, worst_q)
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
       local meta = inv_meta[m]
-			--configuration.log('$$$$', min_ts_mid, min_ts, m.ts, m.message._in_transit )
-			local em=meta.ts - meta.message._in_transit --estimated emission time
-			--configuration.log('looking for a replacement ---- ', mid, em)
+			--conf.log('$$$$', min_ts_mid, min_ts, m.init_time, m.message._in_transit )
+			local em=meta.init_time - meta.message._in_transit --estimated emission time
+			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=m.message.notification_id
-			if not inv:own()[m]
+			if not inv.own[m]
 			and (not min_ts_mid or min_ts > em) 
 			and m.emited > conf.min_n_broadcasts then
 				min_ts_mid, min_ts = mid, em
@@ -349,12 +353,12 @@ function M.find_replaceable_fifo (rong)
 		end
 
 		return min_ts_mid
-	else --ownmessages:len() >= configuration.reserved_owns
+	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
-		for mid, m in pairs(ownmessages) do
-			if not min_ts_mid or min_ts > m.ts then
-				min_ts_mid, min_ts = mid, m.ts
+		for mid, m in pairs(inv.own) do
+			if not min_ts_mid or min_ts > m.init_time then
+				min_ts_mid, min_ts = mid, m.init_time
 			end
 		end
 

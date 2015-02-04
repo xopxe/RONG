@@ -9,10 +9,10 @@ local selector = require "lumen.tasks.selector"
 selector.init({service='luasocket'})
 
 local conf = {
-  name = 'rongnode', --must be unique
+  name = 'rongnode2', --must be unique
   protocol_port = 8888,
-  listen_on_ip = '127.0.0.1', 
-  broadcast_to_ip = '164.73.36.65', --adress used when broadcasting
+  listen_on_ip = '164.73.36.65', 
+  broadcast_to_ip = '127.0.0.1', --adress used when broadcasting
   udp_opts = {
     broadcast	= 0,
     dontroute	= 0,
@@ -36,24 +36,13 @@ local conf = {
 
 
 local rong = require 'rong'.new(conf)
---[[
 local s = rong:subscribe(
   'SUB1@'..conf.name, 
   {
-    {'q1', '=', 'A1'},
-    {'q2', '=', 'A2'},
+    {'q', '=', 'X'},
   }
 )
 sched.sigrun({s}, function(a, b) print ('NNN', a, b) end)
---]]
-
-rong:notificate(
-  'N1@'..conf.name,
-  {
-    q = 'X'
-  }  
-)
-
 
 --[[
 local udp_out = assert(selector.new_udp(nil, nil, conf.listen_on_ip))

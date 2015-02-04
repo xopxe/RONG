@@ -24,7 +24,6 @@ M.select_matching = function (rong, vs)
 				view_meta[s].last_success=now
 				local own=view_meta[s].own
         if now-inv_meta[m].last_seen > conf.delay_message_emit then
-          print ('!!!!+', mid, m)
           pending:add(mid, m)
 				end
 			end
