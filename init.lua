@@ -8,13 +8,18 @@ local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
 
+local function script_path()
+   local str = debug.getinfo(2, "S").source:sub(2)
+   return str:match("(.*/)")
+end
+
 M.new = function(conf)  
-  local ivs = assert(loadfile 'lib/inventory_view_sets.lua')()
+  local ivs = assert(loadfile (script_path()..'lib/inventory_view_sets.lua'))()
 
   --M.conf = conf
   local rong = setmetatable({
     conf = conf,
-    signals = loadfile 'lib/signals.lua'(),
+    signals = loadfile (script_path()..'lib/signals.lua')(),
     inv = ivs.inv,
     view = ivs.view,
   }, {
@@ -48,8 +53,8 @@ M.new = function(conf)
     end
     return true
   end
-  rong.net = require 'lib.networking'.new(rong, incomming_handler)
-  rong.pending = require 'lib.pending'.new(rong)
+  rong.net = require 'rong.lib.networking'.new(rong, incomming_handler)
+  rong.pending = require 'rong.lib.pending'.new(rong)
     
  
   -- start tasks

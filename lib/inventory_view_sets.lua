@@ -1,9 +1,9 @@
-local tracked_table=require 'lib.tracked_table'
+local tracked_table=require 'rong.lib.tracked_table'
 
 local weak_key = {__mode = 'k'}
 
 local inv, view = {}, {}
-local satisfies = require 'lib.messaging'.satisfies
+local satisfies = require 'rong.lib.messaging'.satisfies
 
 
 local function make_MessageTable ()
