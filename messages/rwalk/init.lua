@@ -165,6 +165,9 @@ M.new = function(rong)
   rong.token = conf.create_token
   
   local tcp_server = selector.new_tcp_server(conf.listen_on_ip, conf.transfer_port, 0, 'stream')
+  conf.listen_on_ip, conf.transfer_port = tcp_server: getsockname()
+  log('RWALK', 'INFO', 'Accepting connections on: %s:%s', 
+    tostring(conf.listen_on_ip), tostring(conf.transfer_port)) 
   sched.sigrun({tcp_server.events.accepted}, get_receive_token_handler(rong))
 
   msg.broadcast_view = function ()
