@@ -4,7 +4,9 @@ package.path = package.path .. ";;;../?.lua;../?/init.lua"
 
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
-log.setlevel('ALL', 'RONG')
+--log.setlevel('ALL', 'RONG')
+--log.setlevel('ALL', 'RON')
+log.setlevel('ALL', 'RWALK')
 local selector = require "lumen.tasks.selector"
 selector.init({service='luasocket'})
 
@@ -19,9 +21,14 @@ local conf = {
   },
   send_views_timeout =  6, --5
   
-  protocol = 'ron',
+  protocol = 'rwalk',
   
   ---[[
+  transfer_port = 8889,
+  create_token = 'TOKEN1',
+  --]]
+  
+  --[[
   gamma = 0.99,
   P_encounter = 0.1,
   inventory_size	= 10,	--max number of messages carried
@@ -36,7 +43,7 @@ local conf = {
 
 
 local rong = require 'rong'.new(conf)
---[[
+---[[
 local s = rong:subscribe(
   'SUB1@'..conf.name, 
   {

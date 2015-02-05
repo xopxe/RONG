@@ -18,6 +18,7 @@ local function make_MessageTable ()
 					n = n + 1
 				end
         local entry = {
+          id = key,
           meta = {},
           data = data,
         }
@@ -65,6 +66,7 @@ local function make_SubscriptionTable ()
 					n = n + 1
 				end
         local entry = {
+          id = key,
           meta = {},
           filter = filter,
         }

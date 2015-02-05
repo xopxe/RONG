@@ -15,7 +15,7 @@ local view_merge = function(rong, vi)
   local conf = rong.conf
     
   for sid, si in pairs(vi) do
-    log('RONG', 'DEBUG', 'Merging subscription: %s', tostring(sid))
+    log('RON', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local sl = view[sid]
     if sl then
       local metasl = sl.meta
@@ -46,15 +46,15 @@ local notifs_merge = function (rong, notifs)
     local meta = n.meta
 		if inv.own[nid] then
 			if now - meta.init_time > conf.max_owning_time then
-				print("==========Purging old own notif", nid)
+        log('RON', 'DEBUG', 'Purging old own notif: %s', tostring(nid))
 				inv:del(nid)
 			elseif meta.emited >= conf.max_ownnotif_transmits then
-				print("==========Purging own notif on transmit count", nid)
+        log('RON', 'DEBUG', 'Purging own notif on transmit count: %s', tostring(nid))
 				inv:del(nid)
 			end
 		else
 			if meta.emited >= conf.max_notif_transmits then
-        print("==========Purging notif on transmit count", nid)
+        log('RON', 'DEBUG', 'Purging notif on transmit count: %s', tostring(nid))
 				inv:del(nid)
 			end
 		end
@@ -76,8 +76,9 @@ local notifs_merge = function (rong, notifs)
       local matches=n.matches
       for sid, s in pairs(rong.view.own) do
         if matches[s] then
-          print ('!!!arrived!', nid)
-          sched.signal(s, data)
+          log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s'
+            , tostring(nid), tostring(sid))
+          sched.signal(s, n)
         end
       end
       
@@ -85,7 +86,8 @@ local notifs_merge = function (rong, notifs)
 			while inv:len()>conf.inventory_size do
 				local mid=ranking_find_replaceable(rong)
 				inv:del(mid or nid)
-				print("messages shrinking", mid or nid, 'to', inv:len())
+        log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
+          tostring(mid or nid), inv:len())
 			end
 		end
 	end

@@ -4,7 +4,9 @@ package.path = package.path .. ";;;../?.lua;../?/init.lua"
 
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
-log.setlevel('ALL', 'RONG')
+--log.setlevel('ALL', 'RONG')
+--log.setlevel('ALL', 'RON')
+log.setlevel('ALL', 'RWALK')
 local selector = require "lumen.tasks.selector"
 selector.init({service='luasocket'})
 
@@ -19,9 +21,13 @@ local conf = {
   },
   send_views_timeout =  6, --5
   
-  protocol = 'ron',
+  protocol = 'rwalk',
   
   ---[[
+  transfer_port = 8889,
+  --]]
+  
+  --[[
   gamma = 0.99,
   P_encounter = 0.1,
   inventory_size	= 10,	--max number of messages carried
@@ -42,7 +48,12 @@ local s = rong:subscribe(
     {'q', '=', 'X'},
   }
 )
-sched.sigrun({s}, function(a, b) print ('NNN', a, b) end)
+sched.sigrun({s}, function(s, n) 
+  print ('ARRIVED FOR', s.id, ':', n.id)
+  for k, v in pairs (n.data) do
+    print ('  >', k, '=', v) 
+  end
+end)
 
 --[[
 local udp_out = assert(selector.new_udp(nil, nil, conf.listen_on_ip))
