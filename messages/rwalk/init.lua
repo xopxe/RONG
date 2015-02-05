@@ -1,4 +1,4 @@
--- ron protocol
+-- rwalk protocol
 
 local M = {}
 
@@ -9,7 +9,7 @@ local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 local selector = require 'lumen.tasks.selector'
 
--- Rpocess incomming view message
+-- Process incomming view message
 local view_merge = function(rong, vi)
   local now = sched.get_time()
   local view = rong.view
@@ -27,6 +27,7 @@ local view_merge = function(rong, vi)
   end
 end
 
+-- Process incomming token
 local notifs_merge = function (rong, notifs)
   local now = sched.get_time()
   local inv = rong.inv
@@ -67,7 +68,7 @@ local notifs_merge = function (rong, notifs)
       if only_own then 
         log('RWALK', 'DEBUG', 'Purging notification: %s', tostring(nid))
         --inv:del(nid)
-        n.meta.delivered = true -- checked when building a token
+        n.meta.delivered = true -- attribute checked when building a token
       end
       --]]
       
@@ -75,6 +76,7 @@ local notifs_merge = function (rong, notifs)
 	end
 end
 
+--FIXME put in a task to insure atomicity
 local transmit_token = function (rong, view) 
   
   -- Open connection
@@ -111,7 +113,7 @@ local transmit_token = function (rong, view)
   end
 end
 
-
+-- Get handler for reading a token from socket
 local get_receive_token_handler = function (rong)
   return function(_, sktd, err)
     assert(sktd, err)
