@@ -67,8 +67,8 @@ local notifs_merge = function (rong, notifs)
       end
       if only_own then 
         log('RWALK', 'DEBUG', 'Purging notification: %s', tostring(nid))
-        --inv:del(nid)
-        n.meta.delivered = true -- attribute checked when building a token
+        inv:del(nid)
+        --n.meta.delivered = true -- attribute checked when building a token
       end
       --]]
       
@@ -77,7 +77,8 @@ local notifs_merge = function (rong, notifs)
 end
 
 --FIXME put in a task to insure atomicity
-local transmit_token = function (rong, view) 
+local transmit_token = function (rong, view)
+  local inv = rong.inv
   
   -- Open connection
   log('RWALK', 'DEBUG', 'Client connecting: %s:%s', 
@@ -86,10 +87,10 @@ local transmit_token = function (rong, view)
   
   -- Build token with everithing in buffer
   local notifs = {}
-  for mid, m in pairs (rong.inv) do
-    if not m.meta.delivered then -- see in notifs_merge()
+  for mid, m in pairs (inv) do
+    --if not m.meta.delivered then -- see in notifs_merge()
       notifs[mid] = m.data 
-    end
+    --end
   end
   local token = {
     token = rong.token,
@@ -100,13 +101,18 @@ local transmit_token = function (rong, view)
   -- Send and then disconnect
   skt:send_async(ms)
   local _, ok = sched.wait({skt.events.async_finished})
-  log('RWALK', 'DEBUG', 'Client sent: %s', tostring(ok))
+  log('RWALK', 'DEBUG', 'Client sent (%s): %s', tostring(ok), ms)
   skt:close()
   
   if ok then
     --token handled
     log('RWALK', 'DETAILS', 'Handed over token: %s', tostring(rong.token))
     rong.token = nil
+    
+    --remove all handled notifiactions
+    for mid, _  in pairs (notifs) do
+      inv:del(mid)
+    end
   else
     --token not handled
     log('RWALK', 'DETAILS', 'Failed to hand over token: %s', tostring(rong.token))
