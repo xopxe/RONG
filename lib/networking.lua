@@ -24,7 +24,7 @@ M.new = function (rong, handler)
   
   
   udp_in = assert( selector.new_udp(nil, nil, 
-      conf.listen_on_ip, conf.protocol_port, -1, handler_wrap))
+      '*' --[[conf.listen_on_ip]], conf.protocol_port, -1, handler_wrap))
   
   log('RONG', 'INFO', 'UDP sending to %s:%s', 
     tostring(conf.broadcast_to_ip or '255.255.255.255'), 
@@ -50,10 +50,12 @@ M.new = function (rong, handler)
   
   ---[[
   if udp_out.fd.setpeername then
+    -- luasocket detected
     assert(udp_out.fd:setpeername(
         conf.broadcast_to_ip or '255.255.255.255',
         conf.protocol_port))
   elseif udp_out.fd.connect then
+    -- nixio
     assert(udp_out.fd:connect(
       conf.broadcast_to_ip or '255.255.255.255', 
       conf.protocol_port))
