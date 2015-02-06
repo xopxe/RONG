@@ -65,10 +65,13 @@ M.new = function(conf)
   
   rong.broadcast_view_task = sched.run( 
     function ()
+      local timeout = conf.send_views_timeout
+      local spread = 0.1
+      local spread_2 = spread / 2
       while true do
         --sched.signal( rong.signals.broadcast_view )
         messages:broadcast_view()
-        sched.sleep( conf.send_views_timeout )
+        sched.sleep( timeout + (spread*math.random()-spread_2)*timeout )
       end
     end
   )
