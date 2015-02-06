@@ -19,19 +19,20 @@ local n = 1
 local conf = {
   name = 'rongnode'..n, --must be unique
   protocol_port = 8888,
-  listen_on_ip = '10.1.0.'..n, 
+  listen_on_ip = '10.42.0.'..n, 
   broadcast_to_ip = '255.255.255.255', --adress used when broadcasting
   udp_opts = {
     broadcast	= 1,
     dontroute	= 0,
   },
-  send_views_timeout =  6, --5
+  send_views_timeout =  1, --5
   
   protocol = 'rwalk',
   
   ---[[
   transfer_port = 0,
   create_token = 'TOKEN@'..n,
+  token_hold_time = 5,
   --]]
   
   --[[

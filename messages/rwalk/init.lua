@@ -108,6 +108,7 @@ local transmit_token = function (rong, view)
     --token handled
     log('RWALK', 'DETAILS', 'Handed over token: %s', tostring(rong.token))
     rong.token = nil
+    rong.token_ts = nil
     
     --remove all handled notifiactions
     for mid, _  in pairs (notifs) do
@@ -140,6 +141,7 @@ local get_receive_token_handler = function (rong)
       log('RWALK', 'DETAILS', 'Got token: %s', tostring(token.token))
       notifs_merge(rong, token.notifs)
       rong.token = token.token
+      rong.token_ts = sched.get_time()
     else
       -- failed to get token
       log('RWALK', 'DETAILS', 'Failed to get token')
@@ -153,8 +155,11 @@ local process_incoming_view = function (rong, view)
   
   --FIXME, add selection logic
   --handle_token(rong, view)
-  if rong.token then 
-    sched.run(transmit_token, rong, view)
+  if rong.token then
+    if sched.get_time() - rong.token_ts > (rong.conf.token_hold_time or 0) 
+    and not view.token then
+      sched.run(transmit_token, rong, view)
+    end
   end
 end
 
@@ -163,6 +168,7 @@ M.new = function(rong)
   local msg = {}
   
   rong.token = conf.create_token
+  rong.token_ts = sched.get_time()
   
   local tcp_server = selector.new_tcp_server(conf.listen_on_ip, conf.transfer_port, 0, 'stream')
   conf.listen_on_ip, conf.transfer_port = tcp_server: getsockname()
@@ -176,6 +182,7 @@ M.new = function(rong)
       emitter = conf.name,
       transfer_ip = conf.listen_on_ip,
       transfer_port = conf.transfer_port,
+      token = rong.token,
       subs = subs
     }
     for sid, s in pairs (rong.view) do
