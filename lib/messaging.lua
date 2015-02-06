@@ -33,7 +33,7 @@ M.satisfies = function (m, filter)
   for i=1, #filter do
     local expr = filter[i]
 		local ev_value, filt_op, filt_value = m[expr[1]], expr[2], expr[3]
-    if ev_value == nil
+    if (filt_op ~= '!=' and ev_value == nil)
     or (filt_op == '=' and (ev_value~=filt_value))
     or (filt_op == '!=' and (ev_value==filt_value))
     or (filt_op == '>' and (ev_value<=filt_value))
