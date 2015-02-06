@@ -4,6 +4,7 @@ local weak_key = {__mode = 'k'}
 
 local inv, view = {}, {}
 local satisfies = require 'rong.lib.messaging'.satisfies
+local log = require 'lumen.log'
 
 
 local function make_MessageTable ()
@@ -30,8 +31,11 @@ local function make_MessageTable ()
 				setmetatable(matches, {__mode='k'})
 				inv[key].matches=matches
 				for sid, s in pairs(view) do
-					if satisfies(data, s.filter) then
-						--print ('M', sid, '+')
+          local satisf = satisfies(data, s.filter)
+          log('RONG', 'DEBUG', 'Notification %s satisfies Subscription %s: %s',
+            key, sid, tostring(satisf))
+					if satisf then
+						--print ('M', key, sid, '+')
 						matches[s] = true
 					end 
 				end
