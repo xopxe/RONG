@@ -19,9 +19,9 @@ local view_merge = function(rong, vi)
     
   -- add all not already registered subscriptions
   for sid, si in pairs(vi.subs) do
-    log('TRW', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local sl = view[sid]
     if not sl then
+      log('TRW', 'DETAIL', 'Merging subscription: %s', tostring(sid))
       view:add(sid, si.filter, false)
       sl = view[sid]
       sl.meta.last_seen = now
@@ -101,7 +101,7 @@ sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
   local ms = assert(encode_f(token)) --FIXME tamaño!
   
   -- Send and then disconnect
-  log('TRW', 'DETAIL', 'Client sendingt %i notifs, %i bytes', 
+  log('TRW', 'DETAIL', 'Client sending %i notifs, %i bytes', 
     inv:len(), #ms)  
   local ok, err, length = skt:send_sync(ms)
   skt:close()
@@ -136,18 +136,18 @@ local get_receive_token_handler = function (rong)
       if chunk then chunks[#chunks+1] = chunk end
     until chunk == nil
     local sc = table.concat(chunks)
-    log('TRW', 'DEBUG', 'Client received: %s', sc)
+    log('TRW', 'DEBUG', 'Client received %i bytes', #sc)
     
     local token = decode_f(sc)
     if token then
       -- got token
-      log('TRW', 'DETAILS', 'Got token: %s', tostring(token.token))
+      log('TRW', 'DETAIL', 'Got token: %s', tostring(token.token))
       notifs_merge(rong, token.notifs)
       rong.token = token.token
       rong.token_ts = sched.get_time()
     else
       -- failed to get token
-      log('TRW', 'DETAILS', 'Failed to get token')
+      log('TRW', 'DETAIL', 'Failed to get token')
     end
     -- end)
   end
