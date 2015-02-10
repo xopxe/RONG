@@ -62,7 +62,7 @@ local notifs_merge = function (rong, notifs)
       -- if all matching subscrptios are own, can be removed from buffer safely
       local only_own = true
       for sid, s in pairs(view) do
-        if not view_own[sid] then
+        if matches[s] and not view_own[sid] then
           only_own = false
           break;
         end
