@@ -121,7 +121,7 @@ sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
     log('TRW', 'DETAIL', 'Failed to hand over token %s with error %s (%i bytes sent)', 
       tostring(rong.token), tostring(err), length)
   end
-end
+end)
 
 -- Get handler for reading a token from socket
 local get_receive_token_handler = function (rong)

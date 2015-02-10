@@ -67,7 +67,7 @@ M.new = function (rong, handler)
   net.broadcast = function ( _, m )
     --assert(udp_out:send_sync(m))
     last_bcast = m
-    udp_out.fd:send(m)
+    assert(udp_out.fd:send(m))
   end
     
   return net

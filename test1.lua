@@ -4,10 +4,9 @@ package.path = package.path .. ";;;../?.lua;../?/init.lua"
 
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
-log.setlevel('ALL', 'RONG')
---log.setlevel('ALL', 'RON')
+log.setlevel('DETAIL', 'RONG')
 log.setlevel('ALL', 'TRW')
---log.setlevel('DETAIL', 'RWALK')
+log.setlevel('ALL', 'TEST')
 --log.setlevel('ALL')
 
 local selector = require "lumen.tasks.selector"
@@ -16,8 +15,10 @@ selector.init({service='luasocket'})
 
 local n = 1
 
+local notifaction_rate = 5    -- secs between notifs
+
 local conf = {
-  name = 'rongnode'..n, --must be unique
+  name = 'node'..n, --must be unique
   protocol_port = 8888,
   listen_on_ip = '10.42.0.'..n, 
   broadcast_to_ip = '255.255.255.255', --adress used when broadcasting
@@ -34,39 +35,38 @@ local conf = {
   create_token = 'TOKEN@'..n,
   token_hold_time = 5,
   --]]
-  
-  --[[
-  gamma = 0.99,
-  P_encounter = 0.1,
-  inventory_size	= 10,	--max number of messages carried
-  reserved_owns	= 5,--guaranteed number of slots for own messages in inventory
-  delay_message_emit = 1,
-  max_owning_time = 60*60*24,	--max time own messages are kept
-  max_notif_transmits = math.huge, --max number of transmissions for each notification
-  max_ownnotif_transmits = math.huge, --max number of transmissions for each own notification,
-  min_n_broadcasts = 0, --see find_replaceable_fifo in ranking.lua
-  --]]
+
 }
 
 math.randomseed(n)
 
 local rong = require 'rong'.new(conf)
---[[
+
 local s = rong:subscribe(
   'SUB1@'..conf.name, 
   {
-    {'q1', '=', 'A1'},
-    {'q2', '=', 'A2'},
+    {'target', '=', 'node'..n },
   }
 )
-sched.sigrun({s}, function(a, b) print ('NNN', a, b) end)
---]]
+sched.sigrun({s}, function(s, n) 
+  log('TEST', 'INFO', 'ARRIVED FOR %s: %s',tostring(s.id), tostring(n.id))
+  for k, v in pairs (n.data) do
+    log('TEST', 'INFO', '   %s=%s',tostring(k), tostring(v))
+  end
+end)
 
-rong:notificate(
-  'N1@'..conf.name,
-  {
-    q = 'X'
-  }  
-)
+
+sched.run( function()
+  while true do
+    rong:notificate(
+      'N'..sched.get_time()..'@'..conf.name,
+      {
+        q = 'X',
+        target = 'node1',
+      }  
+    )
+    sched.sleep(notifaction_rate)
+  end
+end)
 
 sched.loop()
