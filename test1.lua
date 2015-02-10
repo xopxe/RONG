@@ -6,7 +6,7 @@ local sched = require 'lumen.sched'
 local log = require 'lumen.log'
 log.setlevel('ALL', 'RONG')
 --log.setlevel('ALL', 'RON')
-log.setlevel('ALL', 'RWALK')
+log.setlevel('ALL', 'TRW')
 --log.setlevel('DETAIL', 'RWALK')
 --log.setlevel('ALL')
 
@@ -25,9 +25,9 @@ local conf = {
     broadcast	= 1,
     dontroute	= 0,
   },
-  send_views_timeout =  1, --5
+  send_views_timeout =  5, --5
   
-  protocol = 'rwalk',
+  protocol = 'trw',
   
   ---[[
   transfer_port = 0,

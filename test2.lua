@@ -4,27 +4,30 @@ package.path = package.path .. ";;;../?.lua;../?/init.lua"
 
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
---log.setlevel('ALL', 'RONG')
+log.setlevel('ALL', 'RONG')
 --log.setlevel('ALL', 'RON')
-log.setlevel('ALL', 'RWALK')
+log.setlevel('ALL', 'TRW')
+--log.setlevel('DETAIL', 'RWALK')
+--log.setlevel('ALL')
+
 local selector = require "lumen.tasks.selector"
 selector.init({service='luasocket'})
 
 local conf = {
   name = 'rongnode2', --must be unique
   protocol_port = 8888,
-  listen_on_ip = '164.73.36.65', 
-  broadcast_to_ip = '127.0.0.1', --adress used when broadcasting
+  listen_on_ip = '127.0.0.2', 
+  broadcast_to_ip = '255.255.255.255', --adress used when broadcasting
   udp_opts = {
-    broadcast	= 0,
+    broadcast	= 1,
     dontroute	= 0,
   },
   send_views_timeout =  6, --5
   
-  protocol = 'rwalk',
+  protocol = 'trw',
   
   ---[[
-  transfer_port = 8889,
+  transfer_port = 0,
   --]]
   
   --[[
@@ -42,18 +45,25 @@ local conf = {
 
 
 local rong = require 'rong'.new(conf)
+--[[
 local s = rong:subscribe(
   'SUB1@'..conf.name, 
   {
-    {'q', '=', 'X'},
+    {'q1', '=', 'A1'},
+    {'q2', '=', 'A2'},
   }
 )
-sched.sigrun({s}, function(s, n) 
-  print ('ARRIVED FOR', s.id, ':', n.id)
-  for k, v in pairs (n.data) do
-    print ('  >', k, '=', v) 
-  end
-end)
+sched.sigrun({s}, function(a, b) print ('NNN', a, b) end)
+--]]
+
+--[[
+rong:notificate(
+  'N1@'..conf.name,
+  {
+    q = 'X'
+  }  
+)
+--]]
 
 --[[
 local udp_out = assert(selector.new_udp(nil, nil, conf.listen_on_ip))
