@@ -11,6 +11,7 @@ local selector = require 'lumen.tasks.selector'
 
 local EVENT_TRANSMIT_TOKEN = {}
 
+--[[
 -- Process incomming view message
 local view_merge = function(rong, vi)
   local now = sched.get_time()
@@ -28,6 +29,7 @@ local view_merge = function(rong, vi)
     end
   end
 end
+--]]
 
 -- Process incomming token
 local notifs_merge = function (rong, notifs)
@@ -57,23 +59,32 @@ local notifs_merge = function (rong, notifs)
         end
       end
       
-      ---[[
-      --FIXME ???
-      -- if all matching subscrptios are own, can be removed from buffer safely
-      local only_own = true
-      for sid, s in pairs(view) do
-        if matches[s] and not view_own[sid] then
-          only_own = false
-          break;
-        end
-      end
-      if only_own then 
-        log('TRW', 'DEBUG', 'Purging notification: %s', tostring(nid))
-        inv:del(nid)
-        --n.meta.delivered = true -- attribute checked when building a token
-      end
-      --]]
       
+      if n.target then
+        if n.target == rong.conf.name then
+          log('TRW', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
+          inv:del(nid)
+        end
+      else
+        --[[
+        --FIXME ???
+        -- if all matching subscrptios are own, can be removed from buffer safely
+        -- (there shouldn't be any, until support for flooding subs is (re)added)
+        local only_own = true
+        for sid, s in pairs(view) do
+          if matches[s] and not view_own[sid] then
+            only_own = false
+            break;
+          end
+        end
+        if only_own then 
+          log('TRW', 'DEBUG', 'Purging notification: %s', tostring(nid))
+          inv:del(nid)
+          --n.meta.delivered = true -- attribute checked when building a token
+        end
+        --]]
+      end
+
 		end
 	end
 end
@@ -154,7 +165,7 @@ local get_receive_token_handler = function (rong)
 end
 
 local process_incoming_view = function (rong, view)
-  view_merge( rong, view )
+  --view_merge( rong, view )
   
   --FIXME, add selection logic
   --handle_token(rong, view)
@@ -187,15 +198,17 @@ M.new = function(rong)
       transfer_ip = conf.listen_on_ip,
       transfer_port = conf.transfer_port,
       token = rong.token,
-      subs = subs
+      --subs = subs
     }
+    --[[
     for sid, s in pairs (rong.view) do
       local meta = s.meta
       local sr = {
         filter = s.filter,
       }
       subs[sid] = sr
-    end   
+    end
+    --]]
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
     log('TRW', 'DEBUG', 'Broadcast view: %s', tostring(ms))
     rong.net:broadcast( ms )
