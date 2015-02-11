@@ -14,6 +14,7 @@ selector.init({service='luasocket'})
 
 
 local n = 1
+local total_nodes = 2
 
 local notifaction_rate = 5    -- secs between notifs
 
@@ -62,7 +63,7 @@ sched.run( function()
       'N'..sched.get_time()..'@'..conf.name,
       {
         q = 'X',
-        target = 'node1',
+        target = 'node'..math.random(total_nodes),
       }  
     )
     sched.sleep(notifaction_rate)
