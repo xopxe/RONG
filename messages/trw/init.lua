@@ -42,7 +42,6 @@ local notifs_merge = function (rong, notifs)
 		if ni then
       local meta = ni.meta
 			meta.last_seen = now
-			meta.seen=meta.seen+1
 		else	
       log('TRW', 'DEBUG', 'Merging notification: %s', tostring(nid))
       inv:add(nid, data, false)
@@ -68,7 +67,7 @@ local notifs_merge = function (rong, notifs)
       else
         --[[
         --FIXME ???
-        -- if all matching subscrptios are own, can be removed from buffer safely
+        -- if all matching subscriptions are own, can be removed from buffer safely
         -- (there shouldn't be any, until support for flooding subs is (re)added)
         local only_own = true
         for sid, s in pairs(view) do
@@ -232,8 +231,6 @@ M.new = function(rong)
     local meta = n.meta
     meta.init_time=now
     meta.last_seen=now
-    meta.emited=0
-    meta.seen=1
   end
 
   return msg
