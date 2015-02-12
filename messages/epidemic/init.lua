@@ -22,7 +22,7 @@ local view_merge = function(rong, vi)
   for sid, si in pairs(vi.subs) do
     local sl = view[sid]
     if not sl then
-      log('TRW', 'DETAIL', 'Merging subscription: %s', tostring(sid))
+      log('EPIDEMIC', 'DETAIL', 'Merging subscription: %s', tostring(sid))
       view:add(sid, si.filter, false)
       sl = view[sid]
       sl.meta.last_seen = now
@@ -43,7 +43,7 @@ local notifs_merge = function (rong, notifs)
       local meta = ni.meta
 			meta.last_seen = now
 		else	
-      log('TRW', 'DEBUG', 'Merging notification: %s', tostring(nid))
+      log('EPIDEMIC', 'DEBUG', 'Merging notification: %s', tostring(nid))
       inv:add(nid, data, false)
       rong.messages.init_notification(nid) --FIXME refactor?
       local n = inv[nid]
@@ -61,7 +61,7 @@ local notifs_merge = function (rong, notifs)
       
       if n.target then
         if n.target == rong.conf.name then
-          log('TRW', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
+          log('EPIDEMIC', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
           inv:del(nid)
         end
       else
@@ -77,7 +77,7 @@ local notifs_merge = function (rong, notifs)
           end
         end
         if only_own then 
-          log('TRW', 'DEBUG', 'Purging notification: %s', tostring(nid))
+          log('EPIDEMIC', 'DEBUG', 'Purging notification: %s', tostring(nid))
           inv:del(nid)
           --n.meta.delivered = true -- attribute checked when building a token
         end
@@ -93,7 +93,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local inv = rong.inv
   
   -- Open connection
-  log('TRW', 'DEBUG', 'Sender connecting to: %s:%s', 
+  log('EPIDEMIC', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
   local skt = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
     nil, nil, 'line', 'stream')
@@ -105,18 +105,18 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   local svs = assert(encode_f({sv = sv}))
   
-  log('TRW', 'DEBUG', 'Sender sumary vector: %i notifs, %i bytes', 
+  log('EPIDEMIC', 'DEBUG', 'Sender sumary vector: %i notifs, %i bytes', 
     #sv, #svs)  
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
-    log('TRW', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
+    log('EPIDEMIC', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
     return;
   end
   
   -- read request
   local reqs, errread = skt.stream:read_line()
   if not reqs then
-    log('TRW', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
+    log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
     return;
   end
   
@@ -128,11 +128,11 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   
   local outs = assert(encode_f({notifs=out}))
-  log('TRW', 'DEBUG', 'Sender DATA built: %i notifs, %i bytes', 
+  log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %i notifs, %i bytes', 
     #req, #svs)  
   local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
   if not okdata then
-    log('TRW', 'DEBUG', 'Sender DATA send failed: %s', tostring(errsenddata))
+    log('EPIDEMIC', 'DEBUG', 'Sender DATA send failed: %s', tostring(errsenddata))
     return;
   end
 
@@ -144,14 +144,14 @@ local get_receive_token_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
     assert(skt, err)
-    log('TRW', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
+    log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
     -- sched.run( function() -- removed, only single client
       
     -- read summary vector
     local ssv, errread = skt.stream:read_line()
     if not ssv then
-      log('TRW', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
-      return;
+      log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
+      return true
     end
     local sv = assert(decode_f(ssv))
 
@@ -165,24 +165,25 @@ local get_receive_token_handler = function (rong)
     
     local sreq = assert(encode_f({req = req}))
     
-    log('TRW', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
+    log('EPIDEMIC', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
       #req, #sreq)  
     local ok, errsend, length = skt:send_sync(sreq..'\n')  
     if not ok then
-      log('TRW', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
-      return;
+      log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
+      return true
     end
     
     -- receive data
     local sdata, errdataread = skt.stream:read_line()
     if not sdata then
-      log('TRW', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
-      return;
+      log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+      return true
     end
     local data = assert(decode_f(sdata))
     
     notifs_merge(rong, data)
     
+    return true
     -- end)
   end
 end
@@ -199,9 +200,9 @@ M.new = function(rong)
   rong.token = conf.create_token
   rong.token_ts = sched.get_time()
   
-  local tcp_server = selector.new_tcp_server(conf.listen_on_ip, conf.transfer_port, 0, 'stream')
+  local tcp_server = selector.new_tcp_server(conf.listen_on_ip, conf.transfer_port, 'line', 'stream')
   conf.listen_on_ip, conf.transfer_port = tcp_server: getsockname()
-  log('TRW', 'INFO', 'Accepting connections on: %s:%s', 
+  log('EPIDEMIC', 'INFO', 'Accepting connections on: %s:%s', 
     tostring(conf.listen_on_ip), tostring(conf.transfer_port)) 
   sched.sigrun({tcp_server.events.accepted}, get_receive_token_handler(rong))
 
@@ -223,7 +224,7 @@ M.new = function(rong)
     end
     --]]
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('TRW', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    log('EPIDEMIC', 'DEBUG', 'Broadcast view: %s', tostring(ms))
     rong.net:broadcast( ms )
   end
   

@@ -5,7 +5,7 @@ package.path = package.path .. ";;;../?.lua;../?/init.lua"
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
 log.setlevel('DETAIL', 'RONG')
-log.setlevel('ALL', 'TRW')
+log.setlevel('ALL', 'EPIDEMIC')
 log.setlevel('ALL', 'TEST')
 --log.setlevel('ALL')
 
