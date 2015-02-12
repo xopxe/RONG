@@ -105,7 +105,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   local svs = assert(encode_f({sv = sv}))
   
-  log('EPIDEMIC', 'DEBUG', 'Sender sumary vector: %i notifs, %i bytes', 
+  log('EPIDEMIC', 'DEBUG', 'Sender SV: %i notifs, %i bytes', 
     #sv, #svs)  
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
@@ -114,7 +114,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   
   -- read request
-  local reqs, errread = skt.stream:read_line()
+  local reqs, errread = skt.stream:read()
   if not reqs then
     log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
     return;
@@ -148,7 +148,7 @@ local get_receive_token_handler = function (rong)
     -- sched.run( function() -- removed, only single client
       
     -- read summary vector
-    local ssv, errread = skt.stream:read_line()
+    local ssv, errread = skt.stream:read()
     if not ssv then
       log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
       return true
@@ -174,7 +174,7 @@ local get_receive_token_handler = function (rong)
     end
     
     -- receive data
-    local sdata, errdataread = skt.stream:read_line()
+    local sdata, errdataread = skt.stream:read()
     if not sdata then
       log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
       return true
