@@ -59,8 +59,8 @@ local notifs_merge = function (rong, notifs)
       end
       
       
-      if n.target then
-        if n.target == rong.conf.name then
+      if n.data.target then
+        if n.data.target == rong.conf.name then
           log('TRW', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
           inv:del(nid)
         end
