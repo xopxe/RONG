@@ -47,7 +47,8 @@ local notifs_merge = function (rong, notifs)
       inv:add(nid, data, false)
       rong.messages.init_notification(nid) --FIXME refactor?
       local n = inv[nid]
-      
+      n.data._hops = n.data._hops + 1
+
       -- signal arrival of new notification to subscriptions
       local matches=n.matches
       for sid, s in pairs(view_own) do
@@ -129,7 +130,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   
   local outs = assert(encode_f({notifs=out}))
   log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %i notifs, %i bytes', 
-    #req, #svs)  
+    #req.req, #svs)  
   local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
   if not okdata then
     log('EPIDEMIC', 'DEBUG', 'Sender DATA send failed: %s', tostring(errsenddata))
@@ -181,7 +182,7 @@ local get_receive_token_handler = function (rong)
     end
     local data = assert(decode_f(sdata))
     
-    notifs_merge(rong, data)
+    notifs_merge(rong, data.notifs)
     
     return true
     -- end)
@@ -246,6 +247,7 @@ M.new = function(rong)
     local meta = n.meta
     meta.init_time=now
     meta.last_seen=now
+    n.data._hops=0
   end
 
   return msg
