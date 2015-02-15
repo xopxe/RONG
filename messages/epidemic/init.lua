@@ -11,6 +11,7 @@ local selector = require 'lumen.tasks.selector'
 
 local EVENT_TRIGGER_EXCHANGE = {}
 
+
 --[[
 -- Process incomming view message
 local view_merge = function(rong, vi)
@@ -190,16 +191,30 @@ local get_receive_token_handler = function (rong)
 end
 
 local process_incoming_view = function (rong, view)
-  --view_merge( rong, view )
-  sched.signal (EVENT_TRIGGER_EXCHANGE, rong, view)
+  local neighbor = rong.neighbor
+  if neighbor[view.emitter] then
+    -- restart timer
+    sched.signal(neighbor[view.emitter])
+  else
+    -- create timer
+    neighbor[view.emitter] = sched.new_task(function ()
+      local waitd = {sched.running_task, timeout = 2*rong.conf.send_views_timeout}
+      repeat
+        local ev = sched.wait(waitd)
+      until ev == nil -- exit on timeout
+      neighbor[view.emitter] = nil
+    end)
+    
+    sched.signal (EVENT_TRIGGER_EXCHANGE, rong, view)
+  end
 end
 
 M.new = function(rong)  
   local conf = rong.conf
   local msg = {}
-  
-  rong.token = conf.create_token
-  rong.token_ts = sched.get_time()
+
+  rong.neighbor = {}
+
   
   local tcp_server = selector.new_tcp_server(conf.listen_on_ip, conf.transfer_port, 'line', 'stream')
   conf.listen_on_ip, conf.transfer_port = tcp_server: getsockname()
