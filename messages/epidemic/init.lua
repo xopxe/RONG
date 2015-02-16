@@ -38,17 +38,17 @@ local notifs_merge = function (rong, notifs)
   local inv = rong.inv
   local view, view_own = rong.view, rong.view.own
   
-  for nid, data in pairs(notifs) do
+  for nid, reg in pairs(notifs) do
 		local ni=inv[nid]
 		if ni then
       local meta = ni.meta
 			meta.last_seen = now
 		else	
       log('EPIDEMIC', 'DEBUG', 'Merging notification: %s', tostring(nid))
-      inv:add(nid, data, false)
+      inv:add(nid, reg.data, false)
       rong.messages.init_notification(nid) --FIXME refactor?
       local n = inv[nid]
-      n.data._hops = n.data._hops + 1
+      n.meta.hops = reg.hops
 
       -- signal arrival of new notification to subscriptions
       local matches=n.matches
@@ -60,32 +60,15 @@ local notifs_merge = function (rong, notifs)
         end
       end
       
-      
       if n.target then
         if n.target == rong.conf.name then
           log('EPIDEMIC', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
           inv:del(nid)
         end
-      else
-        --[[
-        --FIXME ???
-        -- if all matching subscriptions are own, can be removed from buffer safely
-        -- (there shouldn't be any, until support for flooding subs is (re)added)
-        local only_own = true
-        for sid, s in pairs(view) do
-          if matches[s] and not view_own[sid] then
-            only_own = false
-            break;
-          end
-        end
-        if only_own then 
-          log('EPIDEMIC', 'DEBUG', 'Purging notification: %s', tostring(nid))
-          inv:del(nid)
-          --n.meta.delivered = true -- attribute checked when building a token
-        end
-        --]]
+      elseif n.meta.hops >= rong.conf.max_hop_count then
+        log('EPIDEMIC', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
+        inv:del(nid)
       end
-
 		end
 	end
 end
@@ -126,7 +109,10 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local out = {}
   local req = assert(decode_f(reqs))
   for _, mid in ipairs (req.req) do
-    out[mid] = inv[mid].data
+    out[mid] = {
+      data=inv[mid].data,
+      hops = inv[mid].meta.hops+1
+    }
   end
   
   local outs = assert(encode_f({notifs=out}))
@@ -262,7 +248,7 @@ M.new = function(rong)
     local meta = n.meta
     meta.init_time=now
     meta.last_seen=now
-    n.data._hops=0
+    meta.hops=0
   end
 
   return msg
