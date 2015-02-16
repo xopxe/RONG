@@ -1,4 +1,4 @@
--- rwalk protocol
+-- epidemic protocol
 
 local M = {}
 
@@ -41,8 +41,9 @@ local notifs_merge = function (rong, notifs)
   for nid, reg in pairs(notifs) do
 		local ni=inv[nid]
 		if ni then
-      local meta = ni.meta
-			meta.last_seen = now
+      if ni.meta.hops > reg.hops then
+        ni.meta.hops = reg.hops 
+      end
 		else	
       log('EPIDEMIC', 'DEBUG', 'Merging notification: %s', tostring(nid))
       inv:add(nid, reg.data, false)
@@ -239,7 +240,6 @@ M.new = function(rong)
     local s = assert(rong.view[sid])
     local meta = s.meta
     meta.init_time = now
-    meta.last_seen = now
   end
     
   msg.init_notification = function (nid)
