@@ -33,45 +33,56 @@ end
 --]]
 
 -- Process incomming token
-local notifs_merge = function (rong, notifs)
+local notif_merge = function (rong, notif)
   local now = sched.get_time()
   local inv = rong.inv
   local view, view_own = rong.view, rong.view.own
-  
-  for nid, reg in pairs(notifs) do
-		local ni=inv[nid]
-		if ni then
-      if ni.meta.hops > reg.hops then
-        ni.meta.hops = reg.hops 
-      end
-		else	
-      log('EPIDEMIC', 'DEBUG', 'Merging notification: %s', tostring(nid))
-      inv:add(nid, reg.data, false)
-      rong.messages.init_notification(nid) --FIXME refactor?
-      local n = inv[nid]
-      n.meta.hops = reg.hops
+   
+  local nid, reg = next(notif)
+  local ni=inv[nid]
+  if ni then
+    if ni.meta.hops > reg.hops then
+      ni.meta.hops = reg.hops 
+    end
+  else	
+    log('EPIDEMIC', 'DEBUG', 'Merging notification: %s', tostring(nid))
+    inv:add(nid, reg.data, false)
+    rong.messages.init_notification(nid) --FIXME refactor?
+    local n = inv[nid]
+    n.meta.hops = reg.hops
 
-      -- signal arrival of new notification to subscriptions
-      local matches=n.matches
-      for sid, s in pairs(view_own) do
-        if matches[s] then
-          log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s', 
-            tostring(nid), tostring(sid))
-          sched.signal(s, n)          
-        end
+    -- signal arrival of new notification to subscriptions
+    local matches=n.matches
+    for sid, s in pairs(view_own) do
+      if matches[s] then
+        log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s', 
+          tostring(nid), tostring(sid))
+        sched.signal(s, n)          
       end
-      
-      if n.target then
-        if n.target == rong.conf.name then
-          log('EPIDEMIC', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
-          inv:del(nid)
-        end
-      elseif n.meta.hops >= rong.conf.max_hop_count then
-        log('EPIDEMIC', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
+    end
+    
+    if n.target then
+      if n.target == rong.conf.name then
+        log('EPIDEMIC', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
         inv:del(nid)
       end
-		end
-	end
+    elseif n.meta.hops >= rong.conf.max_hop_count then
+      log('EPIDEMIC', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
+      inv:del(nid)
+    end
+    
+    while inv:len() > (rong.conf.buff_size or math.huge) do
+      local oldest, oldesttime
+      for mid, m in pairs (inv) do
+        if m.meta.init_time < (oldesttime or math.huge) then
+          oldest, oldesttime = mid, m.meta.init_time
+        end
+      end
+      log('EPIDEMIC', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
+      inv:del(oldest)
+    end
+    
+  end
 end
 
 --in a task to insure atomicity
@@ -96,6 +107,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
     log('EPIDEMIC', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
+    skt:close()
     return;
   end
   
@@ -103,28 +115,27 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local reqs, errread = skt.stream:read()
   if not reqs then
     log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
+    skt:close()
     return;
   end
   
   -- send requested data
-  local out = {}
   local req = assert(decode_f(reqs))
   for _, mid in ipairs (req.req) do
+    local out = {}
     out[mid] = {
-      data=inv[mid].data,
+      data = inv[mid].data,
       hops = inv[mid].meta.hops+1
     }
+    local outs = assert(encode_f(out))
+    log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #svs)      
+    local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
+    if not okdata then
+      log('EPIDEMIC', 'DEBUG', 'Sender DATA send failed: %s', tostring(errsenddata))
+      break;
+    end
   end
   
-  local outs = assert(encode_f({notifs=out}))
-  log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %i notifs, %i bytes', 
-    #req.req, #svs)  
-  local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
-  if not okdata then
-    log('EPIDEMIC', 'DEBUG', 'Sender DATA send failed: %s', tostring(errsenddata))
-    return;
-  end
-
   skt:close()
 end)
 
@@ -132,7 +143,6 @@ end)
 local get_receive_token_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
-    assert(skt, err)
     log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
     -- sched.run( function() -- removed, only single client
       
@@ -142,8 +152,12 @@ local get_receive_token_handler = function (rong)
       log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
       return true
     end
-    local sv = assert(decode_f(ssv))
-
+    local sv, parserr = decode_f(ssv)
+    if not sv then
+      log('EPIDEMIC', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
+      return true
+    end
+    
      -- send request
     local req = {}
     for _, mid in ipairs(sv.sv) do
@@ -163,21 +177,29 @@ local get_receive_token_handler = function (rong)
     end
     
     -- receive data
-    local sdata, errdataread = skt.stream:read()
-    if not sdata then
-      log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
-      return true
-    end
-    local data = assert(decode_f(sdata))
+    repeat
+      local data, decoderr
+      local sdata, errdataread = skt.stream:read()
+      if sdata then
+        data, decoderr = decode_f(sdata)
+        if data then
+          notif_merge(rong, data)
+        else
+          log('EPIDEMIC', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
+        end        
+      elseif errdataread~='closed' then
+        log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+      end
+    until not sdata or not data
     
-    notifs_merge(rong, data.notifs)
-    
+    skt:close()
     return true
     -- end)
   end
 end
 
 local process_incoming_view = function (rong, view)
+  local conf = rong.conf
   local neighbor = rong.neighbor
   if neighbor[view.emitter] then
     -- restart timer
@@ -185,7 +207,10 @@ local process_incoming_view = function (rong, view)
   else
     -- create timer
     neighbor[view.emitter] = sched.new_task(function ()
-      local waitd = {sched.running_task, timeout = 2*rong.conf.send_views_timeout}
+      local waitd = {
+        sched.running_task, 
+        timeout = conf.neighborhood_window or 2*conf.send_views_timeout
+      }
       repeat
         local ev = sched.wait(waitd)
       until ev == nil -- exit on timeout
@@ -249,8 +274,26 @@ M.new = function(rong)
     meta.init_time=now
     meta.last_seen=now
     meta.hops=0
+    
+    while rong.inv:len() > (rong.conf.buff_size or math.huge) do
+      local oldest, oldesttime
+      for mid, m in pairs (rong.inv) do
+        if m.meta.init_time < (oldesttime or math.huge) then
+          oldest, oldesttime = mid, m.meta.init_time
+        end
+      end
+      log('EPIDEMIC', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
+      rong.inv:del(oldest)
+    end
+    
+    local neighbor = rong.neighbor
+    for k, timer in pairs (neighbor) do
+      timer:kill()
+      neighbor[k] = nil
+    end
+    
   end
-
+  
   return msg
 end
 

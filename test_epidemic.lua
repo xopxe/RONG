@@ -39,7 +39,9 @@ local conf = {
   protocol = 'epidemic',
   transfer_port = 0,
   max_hop_count = 5,
-  buff_sie = 50,
+  buff_size = 3,
+
+  --neighborhood_window = 1, -- for debugging, should be disabled
 
 }
 
@@ -53,25 +55,33 @@ local s = rong:subscribe(
     {'target', '=', 'node'..n },
   }
 )
+log('TEST', 'INFO', 'SUBSCRIBING FOR target=%s', tostring(s.filter[1][3]))
 sched.sigrun({s}, function(s, n) 
   log('TEST', 'INFO', 'ARRIVED FOR %s: %s',tostring(s.id), tostring(n.id))
   for k, v in pairs (n.data) do
-    log('TEST', 'INFO', '   %s=%s',tostring(k), tostring(v))
+    log('TEST', 'INFO', '>>>>> %s=%s',tostring(k), tostring(v))
   end
 end)
 
 
 sched.run( function()
   while true do
+    local target
+    repeat
+      target = 'node'..math.random(total_nodes)
+    until target ~= conf.name
+    log('TEST', 'INFO', 'NOTIFICATING FOR target=%s: %s', 
+      target,'N'..sched.get_time()..'@'..conf.name)
     rong:notificate(
       'N'..sched.get_time()..'@'..conf.name,
       {
         q = 'X',
-        target = 'node'..math.random(total_nodes),
+        target = target,
       }  
     )
     sched.sleep(notifaction_rate)
   end
 end)
+
 
 sched.loop()
