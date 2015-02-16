@@ -70,7 +70,19 @@ local notif_merge = function (rong, notif)
       log('EPIDEMIC', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
       inv:del(nid)
     end
-
+    
+    while inv:len() > (rong.conf.buff_size or math.huge) do
+      local oldest, oldesttime
+      for mid, m in pairs (inv) do
+        if m.meta.init_time < (oldesttime or math.huge) then
+          oldest, oldesttime = mid, m.meta.init_time
+        end
+      end
+      log('EPIDEMIC', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
+      inv:del(oldest)
+    end
+    
+  end
 end
 
 --in a task to insure atomicity
@@ -95,6 +107,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
     log('EPIDEMIC', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
+    skt:close()
     return;
   end
   
@@ -102,6 +115,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local reqs, errread = skt.stream:read()
   if not reqs then
     log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
+    skt:close()
     return;
   end
   
@@ -129,7 +143,6 @@ end)
 local get_receive_token_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
-    assert(skt, err)
     log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
     -- sched.run( function() -- removed, only single client
       
@@ -179,12 +192,14 @@ local get_receive_token_handler = function (rong)
       end
     until not sdata or not data
     
+    skt:close()
     return true
     -- end)
   end
 end
 
 local process_incoming_view = function (rong, view)
+  local conf = rong.conf
   local neighbor = rong.neighbor
   if neighbor[view.emitter] then
     -- restart timer
@@ -192,7 +207,10 @@ local process_incoming_view = function (rong, view)
   else
     -- create timer
     neighbor[view.emitter] = sched.new_task(function ()
-      local waitd = {sched.running_task, timeout = 2*rong.conf.send_views_timeout}
+      local waitd = {
+        sched.running_task, 
+        timeout = conf.neighborhood_window or 2*conf.send_views_timeout
+      }
       repeat
         local ev = sched.wait(waitd)
       until ev == nil -- exit on timeout
@@ -256,8 +274,26 @@ M.new = function(rong)
     meta.init_time=now
     meta.last_seen=now
     meta.hops=0
+    
+    while rong.inv:len() > (rong.conf.buff_size or math.huge) do
+      local oldest, oldesttime
+      for mid, m in pairs (rong.inv) do
+        if m.meta.init_time < (oldesttime or math.huge) then
+          oldest, oldesttime = mid, m.meta.init_time
+        end
+      end
+      log('EPIDEMIC', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
+      rong.inv:del(oldest)
+    end
+    
+    local neighbor = rong.neighbor
+    for k, timer in pairs (neighbor) do
+      timer:kill()
+      neighbor[k] = nil
+    end
+    
   end
-
+  
   return msg
 end
 
