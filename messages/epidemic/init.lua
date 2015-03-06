@@ -55,7 +55,7 @@ local notif_merge = function (rong, notif)
     local matches=n.matches
     for sid, s in pairs(view_own) do
       if matches[s] then
-        log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s', 
+        log('EPIDEMIC', 'DEBUG', 'Singalling arrived notification: %s to %s', 
           tostring(nid), tostring(sid))
         sched.signal(s, n)          
       end

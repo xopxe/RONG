@@ -1,6 +1,6 @@
---require "strict"
+--require 'strict'
 --look for packages one folder up.
-package.path = package.path .. ";;;../?.lua;../?/init.lua"
+package.path = package.path .. ';;;../?.lua;../?/init.lua'
 
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
@@ -9,7 +9,7 @@ log.setlevel('ALL', 'EPIDEMIC')
 log.setlevel('ALL', 'TEST')
 --log.setlevel('ALL')
 
-local selector = require "lumen.tasks.selector"
+local selector = require 'lumen.tasks.selector'
 selector.init({service='luasocket'})
 
 
