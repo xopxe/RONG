@@ -1,4 +1,4 @@
--- rwalk protocol
+-- trw protocol
 
 local M = {}
 

@@ -1,4 +1,4 @@
--- epidemic protocol
+-- binary spray and wait protocol
 
 local M = {}
 
@@ -45,29 +45,34 @@ local notif_merge = function (rong, notif)
       ni.meta.hops = reg.hops 
     end
   else	
-    log('EPIDEMIC', 'DEBUG', 'Merging notification: %s', tostring(nid))
+    log('BSW', 'DEBUG', 'Merging notification: %s (%s copies)', 
+      tostring(nid), tostring(reg.copies))
     inv:add(nid, reg.data, false)
     rong.messages.init_notification(nid) --FIXME refactor?
     local n = inv[nid]
     n.meta.hops = reg.hops
+    n.meta.copies = reg.copies
 
     -- signal arrival of new notification to subscriptions
     local matches=n.matches
     for sid, s in pairs(view_own) do
       if matches[s] then
-        log('EPIDEMIC', 'DEBUG', 'Singalling arrived notification: %s to %s', 
+        log('BSW', 'DEBUG', 'Singalling arrived notification: %s to %s', 
           tostring(nid), tostring(sid))
-        sched.signal(s, n)          
+        sched.signal(s, n)
       end
     end
     
     if n.target then
       if n.target == rong.conf.name then
-        log('EPIDEMIC', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
+        log('BSW', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
         inv:del(nid)
       end
     elseif n.meta.hops >= rong.conf.max_hop_count then
-      log('EPIDEMIC', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
+      log('BSW', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
+      inv:del(nid)
+    elseif n.meta.copies == 0 then
+      log('BSW', 'DEBUG', 'Purging notification on wait mode: %s', tostring(nid))
       inv:del(nid)
     end
     
@@ -78,7 +83,7 @@ local notif_merge = function (rong, notif)
           oldest, oldesttime = mid, m.meta.init_time
         end
       end
-      log('EPIDEMIC', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
+      log('BSW', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
       inv:del(oldest)
     end
     
@@ -90,7 +95,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local inv = rong.inv
   
   -- Open connection
-  log('EPIDEMIC', 'DEBUG', 'Sender connecting to: %s:%s', 
+  log('BSW', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
   local skt = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
     nil, nil, 'line', 'stream')
@@ -102,11 +107,11 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   local svs = assert(encode_f({sv = sv}))
   
-  log('EPIDEMIC', 'DEBUG', 'Sender SV: %i notifs, %i bytes', 
+  log('BSW', 'DEBUG', 'Sender SV: %i notifs, %i bytes', 
     #sv, #svs)  
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
-    log('EPIDEMIC', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
+    log('BSW', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
     skt:close()
     return;
   end
@@ -114,7 +119,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   -- read request
   local reqs, errread = skt.stream:read()
   if not reqs then
-    log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
+    log('BSW', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
     skt:close()
     return;
   end
@@ -123,15 +128,22 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local req = assert(decode_f(reqs))
   for _, mid in ipairs (req.req) do
     local out = {}
+    local m = inv[mid]
+    local transfer_copies = math.floor(m.meta.copies/2)
     out[mid] = {
-      data = inv[mid].data,
-      hops = inv[mid].meta.hops+1
+      data = m.data,
+      hops = m.meta.hops+1,
+      copies = transfer_copies,
     }
     local outs = assert(encode_f(out))
-    log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #outs)      
-    local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
-    if not okdata then
-      log('EPIDEMIC', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
+    log('BSW', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #outs)      
+    local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')
+    if okdata then
+      log('BSW', 'DEBUG', 'Sender DATA transfered %i copies for %s', 
+        transfer_copies, tostring(mid))
+      m.meta.copies = m.meta.copies - transfer_copies
+    else
+      log('BSW', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
       break;
     end
   end
@@ -143,18 +155,18 @@ end)
 local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
-    log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
+    log('BSW', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
     -- sched.run( function() -- removed, only single client
       
     -- read summary vector
     local ssv, errread = skt.stream:read()
     if not ssv then
-      log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
+      log('BSW', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
       return true
     end
     local sv, parserr = decode_f(ssv)
     if not sv then
-      log('EPIDEMIC', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
+      log('BSW', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
       return true
     end
     
@@ -168,11 +180,11 @@ local get_receive_transfer_handler = function (rong)
     
     local sreq = assert(encode_f({req = req}))
     
-    log('EPIDEMIC', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
+    log('BSW', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
       #req, #sreq)  
     local ok, errsend, length = skt:send_sync(sreq..'\n')  
     if not ok then
-      log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
+      log('BSW', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
       return true
     end
     
@@ -183,12 +195,12 @@ local get_receive_transfer_handler = function (rong)
       if sdata then
         data, decoderr = decode_f(sdata)
         if data then
-          notif_merge(rong, data)
+          notif_merge(rong, data.data)
         else
-          log('EPIDEMIC', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
+          log('BSW', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
         end        
       elseif errdataread~='closed' then
-        log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+        log('BSW', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
       end
     until not sdata or not data
     
@@ -230,9 +242,9 @@ M.new = function(rong)
   
   local tcp_server = selector.new_tcp_server(conf.listen_on_ip, conf.transfer_port, 'line', 'stream')
   conf.listen_on_ip, conf.transfer_port = tcp_server: getsockname()
-  log('EPIDEMIC', 'INFO', 'Accepting connections on: %s:%s', 
+  log('BSW', 'INFO', 'Accepting connections on: %s:%s', 
     tostring(conf.listen_on_ip), tostring(conf.transfer_port)) 
-  sched.sigrun({tcp_server.events.accepted}, get_receive_transfer_handler(rong))
+  sched.sigrun({tcp_server.events.accepted}, (rong))
 
   msg.broadcast_view = function ()
     local subs = {}
@@ -252,7 +264,7 @@ M.new = function(rong)
     end
     --]]
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('EPIDEMIC', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    log('BSW', 'DEBUG', 'Broadcast view: %s', tostring(ms))
     rong.net:broadcast( ms )
   end
   
@@ -274,6 +286,7 @@ M.new = function(rong)
     meta.init_time=now
     meta.last_seen=now
     meta.hops=0
+    meta.copies = conf.start_copies
     
     while rong.inv:len() > (rong.conf.buff_size or math.huge) do
       local oldest, oldesttime
@@ -282,7 +295,7 @@ M.new = function(rong)
           oldest, oldesttime = mid, m.meta.init_time
         end
       end
-      log('EPIDEMIC', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
+      log('BSW', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
       rong.inv:del(oldest)
     end
     
