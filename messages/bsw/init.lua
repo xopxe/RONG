@@ -195,7 +195,7 @@ local get_receive_transfer_handler = function (rong)
       if sdata then
         data, decoderr = decode_f(sdata)
         if data then
-          notif_merge(rong, data.data)
+          notif_merge(rong, data)
         else
           log('BSW', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
         end        
@@ -244,7 +244,7 @@ M.new = function(rong)
   conf.listen_on_ip, conf.transfer_port = tcp_server: getsockname()
   log('BSW', 'INFO', 'Accepting connections on: %s:%s', 
     tostring(conf.listen_on_ip), tostring(conf.transfer_port)) 
-  sched.sigrun({tcp_server.events.accepted}, (rong))
+  sched.sigrun({tcp_server.events.accepted}, get_receive_transfer_handler(rong))
 
   msg.broadcast_view = function ()
     local subs = {}
