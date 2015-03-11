@@ -3,13 +3,13 @@ local M = {}
 local sched = require("lumen.sched")
 
 local function not_on_path(rong)
-  local inv = rong.inv
+  local inv, conf = rong.inv, rong.conf
   local own = inv.own
   local nop = {}
 	for mid, m in pairs(inv) do
 		if not own[m] then
       local meta = m.meta
-			if not meta.path[meta.conf.name] then
+			if not meta.path[conf.name] then
         nop[mid] = true
 			end
 		end
