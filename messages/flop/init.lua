@@ -131,7 +131,7 @@ M.new = function(rong)
   
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_fifo_not_on_path'
-  rong.ranking_find_replaceable = (require 'messages.flop.ranking')[ranking_method]
+  rong.ranking_find_replaceable = (require 'rong.messages.flop.ranking')[ranking_method]
   
   msg.broadcast_view = function ()
     for k, v in pairs (rong.view.own) do

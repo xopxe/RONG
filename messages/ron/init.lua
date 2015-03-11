@@ -136,7 +136,7 @@ M.new = function(rong)
   
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_replaceable_fifo'
-  rong.ranking_find_replaceable = (require 'messages.ron.ranking')[ranking_method]
+  rong.ranking_find_replaceable = (require 'rong.messages.ron.ranking')[ranking_method]
   
   msg.broadcast_view = function ()
     apply_aging(rong)
