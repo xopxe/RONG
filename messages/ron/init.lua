@@ -4,7 +4,7 @@ local M = {}
 
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
-local messaging = require 'lib.messaging'
+local messaging = require 'rong.lib.messaging'
 local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
