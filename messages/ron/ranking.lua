@@ -52,7 +52,7 @@ M.find_replaceable_homogeneous = function (rong) --FIXME
 		--classify in ranges
 		for _, mid in ipairs(worsts) do
 			local m = messages[mid]
-			local age=(now-m.init_time) + m.message._in_transit --estimated emission time
+			local age=(now-m.meta.init_time) + m.message._in_transit --estimated emission time
 			if age > ranking_window then return mid end
 			local range = math.floor(number_of_ranges * (age / ranking_window))+1
 			if range > number_of_ranges then range = number_of_ranges end 
@@ -82,8 +82,8 @@ M.find_replaceable_homogeneous = function (rong) --FIXME
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 
@@ -105,7 +105,7 @@ M.find_replaceable_seen_rate = function (rong) --FIXME
 		local max_seenrate, max_seenrate_mid
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
-			local age = now - m.init_time
+			local age = now - m.meta.init_time
 			local seenrate = m.seen / age
 			if not m.own and age > conf.min_time_for_averaging
 			and (not max_seenrate_mid or max_seenrate < seenrate) then
@@ -118,8 +118,8 @@ M.find_replaceable_seen_rate = function (rong) --FIXME
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(messages.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 
@@ -152,8 +152,8 @@ M.find_replaceable_seen = function (rong) --FIXME
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 
@@ -179,8 +179,8 @@ M.find_replaceable_diversity_array = function (rong) --FIXME
 			if m.discard_sample then
 				diversity_array[#diversity_array + 1] = mid
 			end
-			--conf.log('$$$$', min_ts_mid, min_ts, m.init_time, m.message._in_transit )
-			local em=m.init_time - m.message._in_transit --estimated emission time
+			--conf.log('$$$$', min_ts_mid, min_ts, m.meta.init_time, m.message._in_transit )
+			local em=m.meta.init_time - m.message._in_transit --estimated emission time
 			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=-m.emited
 			--local em=m.message.notification_id
@@ -208,8 +208,8 @@ M.find_replaceable_diversity_array = function (rong) --FIXME
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 
@@ -256,7 +256,7 @@ M.find_replaceable_variable_aging = function (rong) --FIXME
 				m.aging_slower = aging_hash(mid)
 			end
 
-			local em=(m.init_time - m.message._in_transit * m.aging_slower) --estimated emission time
+			local em=(m.meta.init_time - m.message._in_transit * m.aging_slower) --estimated emission time
 
 			if not m.own 
 			and (not min_ts_mid or min_ts > em) 
@@ -270,8 +270,8 @@ M.find_replaceable_variable_aging = function (rong) --FIXME
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(messages.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 
@@ -294,7 +294,7 @@ M.find_replaceable_window = function (rong) --FIXME
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
-			local em=m.init_time - m.message._in_transit --estimated emission time
+			local em=m.meta.init_time - m.message._in_transit --estimated emission time
 			if not m.message.own then
 				candidate_random[#candidate_random+1]=mid
 			end
@@ -316,8 +316,8 @@ M.find_replaceable_window = function (rong) --FIXME
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 
@@ -341,8 +341,8 @@ function M.find_replaceable_fifo (rong)
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
       local meta = m.meta
-			--conf.log('$$$$', min_ts_mid, min_ts, m.init_time, m.message._in_transit )
-			local em=meta.init_time - meta.message._in_transit --estimated emission time
+			--conf.log('$$$$', min_ts_mid, min_ts, m.meta.init_time, m.message._in_transit )
+			local em=meta.meta.init_time - meta.message._in_transit --estimated emission time
 			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=m.message.notification_id
 			if not inv.own[m]
@@ -357,8 +357,8 @@ function M.find_replaceable_fifo (rong)
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+			if not min_ts_mid or min_ts > m.meta.init_time then
+				min_ts_mid, min_ts = mid, m.meta.init_time
 			end
 		end
 

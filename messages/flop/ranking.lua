@@ -44,8 +44,9 @@ function M.find_fifo_not_on_path (rong)
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.init_time then
-				min_ts_mid, min_ts = mid, m.init_time
+      local meta = m.meta
+			if not min_ts_mid or min_ts > meta.init_time then
+				min_ts_mid, min_ts = mid, meta.init_time
 			end
 		end
     
