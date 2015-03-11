@@ -8,7 +8,7 @@ local sched = require 'lumen.sched'
 M.select_matching = function (rong, vs)
   local inv, view  = rong.inv, rong.view
   local conf = rong.conf
-  local pending = rong.pending
+  --local pending = rong.pending
 
   local ret = {}
 
@@ -20,11 +20,15 @@ M.select_matching = function (rong, vs)
 			if s and matches[s] then
 				s.meta.last_success=now
         if now-m.meta.last_seen > conf.delay_message_emit then
-          pending:add(mid, m.data)
+          --ret[mid] = m
+          --pending:add(mid, m.data)
+          ret[mid] = ret[mid] or {}
+          ret[mid][sid] = s
 				end
 			end
 		end
 	end
+  return ret
 end
 
 --whether a given message satisfies a filter

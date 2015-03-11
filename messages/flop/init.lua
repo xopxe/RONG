@@ -15,21 +15,27 @@ local view_merge = function(rong, vi)
   local conf = rong.conf
     
   for sid, si in pairs(vi) do
-    log('RON', 'DEBUG', 'Merging subscription: %s', tostring(sid))
+    log('FLOP', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local sl = view[sid]
     if sl then
-      local metasl = sl.meta
-      assert(si.p, "Malformed view, missing p")
-			if metasl.p<si.p and not view.own[sid] then
-				local p_old=metasl.p
-				metasl.p = p_old + ( 1 - p_old ) * si.p * conf.P_encounter
-			end
+      local meta = sl.meta
+      if meta.seq < si.seq then
+        meta.seq = si.seq
+        --FIXME??
+        meta.visited = si.visited
+        meta.visited[rong.conf.name] = true
+        --/FIXME??
+      end  
     else
       view:add(sid, si.filter, false)
       sl = view[sid]
-      sl.meta.p = si.p --TODO how to initialize p from incomming?
+      local meta = sl.meta
+      meta.init_time = now
+      meta.emited = 0
+      meta.seq = si.seq
+      meta.visited = si.visited
+      meta.visited[rong.conf.name] = true
     end
-    sl.meta.last_seen = now
   end
 end
 
@@ -46,15 +52,15 @@ local notifs_merge = function (rong, notifs)
     local meta = n.meta
 		if inv.own[nid] then
 			if now - meta.init_time > conf.max_owning_time then
-        log('RON', 'DEBUG', 'Purging old own notif: %s', tostring(nid))
+        log('FLOP', 'DEBUG', 'Purging old own notif: %s', tostring(nid))
 				inv:del(nid)
 			elseif meta.emited >= conf.max_ownnotif_transmits then
-        log('RON', 'DEBUG', 'Purging own notif on transmit count: %s', tostring(nid))
+        log('FLOP', 'DEBUG', 'Purging own notif on transmit count: %s', tostring(nid))
 				inv:del(nid)
 			end
 		else
 			if meta.emited >= conf.max_notif_transmits then
-        log('RON', 'DEBUG', 'Purging notif on transmit count: %s', tostring(nid))
+        log('FLOP', 'DEBUG', 'Purging notif on transmit count: %s', tostring(nid))
 				inv:del(nid)
 			end
 		end
@@ -71,12 +77,14 @@ local notifs_merge = function (rong, notifs)
       inv:add(nid, data, false)
       rong.messages.init_notification(nid) --FIXME refactor?
       local n = inv[nid]
+      n.meta.path=data._path
+      data._path = nil
       
       -- signal arrival of new notification to subscriptions
       local matches=n.matches
       for sid, s in pairs(rong.view.own) do
         if matches[s] then
-          log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s'
+          log('FLOP', 'DEBUG', 'Singalling arrived notification: %s to %s'
             , tostring(nid), tostring(sid))
           sched.signal(s, n)
         end
@@ -86,33 +94,12 @@ local notifs_merge = function (rong, notifs)
 			while inv:len()>conf.inventory_size do
 				local mid=ranking_find_replaceable(rong)
 				inv:del(mid or nid)
-        log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
+        log('FLOP', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
           tostring(mid or nid), inv:len())
 			end
 		end
 	end
 
-end
-
-local apply_aging = function (rong)
-  local now = sched.get_time()
-  
-  local view = rong.view
-  local conf = rong.conf
-  
-  for sid, s in pairs(view) do
-    local meta = s.meta
-    if not view.own[sid] then
-      meta.p=meta.p * conf.gamma^(now-meta.last_seen)
-      meta.last_seen=now
-    end
-    --delete if p_encounter too small
-    if meta.p < (conf.min_p or 0) then
-      log('RONG', 'Purging subscription %s with p=%s',
-        tostring(sid), tostring(meta.p_encounter))
-      view:del(sid)
-    end
-  end
 end
 
 local process_incoming_view = function (rong, view)
@@ -122,8 +109,16 @@ local process_incoming_view = function (rong, view)
   -- forwarding
   local matching = messaging.select_matching( rong, view )
   local pending, inv = rong.pending, rong.inv
-  for mid, _ in pairs(matching) do
-    rong.pending:add(mid, inv[mid].data)
+  for mid, subs in pairs(matching) do
+    local data = inv[mid].data
+    local path = {}
+    data._path = path
+    for sid, s in pairs(subs) do
+      for node, _ in pairs(s.meta.visited) do
+        path[node] = true
+      end
+    end    
+    rong.pending:add(mid, data)
   end
 end
 
@@ -135,29 +130,27 @@ M.new = function(rong)
   local msg = {}
   
   local ranking_method = rong.conf.ranking_find_replaceable 
-  or 'find_replaceable_fifo'
-  rong.ranking_find_replaceable = (require 'messages.ron.ranking')[ranking_method]
+  or 'find_fifo_not_on_path'
+  rong.ranking_find_replaceable = (require 'messages.flop.ranking')[ranking_method]
   
   msg.broadcast_view = function ()
-    apply_aging(rong)
+    for k, v in pairs (rong.view.own) do
+      v.meta.seq = v.meta.seq + 1
+    end
     local view_emit = {}
     for sid, s in pairs (rong.view) do
       local meta = s.meta
+      meta.emited = meta.emited + 1
       local sr = {
         filter = s.filter,
-        p = meta.p,
+        seq = meta.seq,
+        visited =  meta.visited,
       }
       view_emit[sid] = sr
     end
     
-    --[[
-    for k,v in pairs (view_emit['SUB1@rongnode'] or {}) do
-      print('>', type(k),k,type(v),v)
-    end
-    --]]
-    
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('RONG', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    log('FLOP', 'DEBUG', 'Broadcast view: %s', tostring(ms))
     rong.net:broadcast( ms )
   end
   
@@ -171,8 +164,9 @@ M.new = function(rong)
     local s = assert(rong.view[sid])
     local meta = s.meta
     meta.init_time = now
-    meta.last_seen = now
-    meta.p = 1.0
+    meta.seq = 0
+    meta.emited = 0
+    meta.visited = {}
   end
     
   msg.init_notification = function (nid)
