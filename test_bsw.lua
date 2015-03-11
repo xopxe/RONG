@@ -40,7 +40,7 @@ local conf = {
   transfer_port = 0,
   max_hop_count = math.huge,
   start_copies = 5,
-  buff_size = 3,
+  inventory_size = 3,
 
   --neighborhood_window = 1, -- for debugging, should be disabled
 

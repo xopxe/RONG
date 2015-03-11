@@ -71,7 +71,7 @@ local notif_merge = function (rong, notif)
       inv:del(nid)
     end
     
-    while inv:len() > (rong.conf.buff_size or math.huge) do
+    while inv:len() > (rong.conf.inventory_size or math.huge) do
       local oldest, oldesttime
       for mid, m in pairs (inv) do
         if m.meta.init_time < (oldesttime or math.huge) then
@@ -275,7 +275,7 @@ M.new = function(rong)
     meta.last_seen=now
     meta.hops=0
     
-    while rong.inv:len() > (rong.conf.buff_size or math.huge) do
+    while rong.inv:len() > (rong.conf.inventory_size or math.huge) do
       local oldest, oldesttime
       for mid, m in pairs (rong.inv) do
         if m.meta.init_time < (oldesttime or math.huge) then
