@@ -3,8 +3,8 @@ local M = {}
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
 
---selects messages to be sent out in response to views received
---parameters should be set of subscription ids.
+--selects messages matching a set of subscriptions
+--parameter should be set of subscription ids.
 M.select_matching = function (rong, vs)
   local inv, view  = rong.inv, rong.view
   local conf = rong.conf
