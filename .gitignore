@@ -1,0 +1,6 @@
+#Scite backup
+*~
+
+#vim swap
+*.swp
+*.sublime-*
