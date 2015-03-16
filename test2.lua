@@ -32,7 +32,7 @@ local conf = {
   
   --[[
   gamma = 0.99,
-  P_encounter = 0.1,
+  p_encounter = 0.1,
   inventory_size	= 10,	--max number of messages carried
   reserved_owns	= 5,--guaranteed number of slots for own messages in inventory
   delay_message_emit = 1,

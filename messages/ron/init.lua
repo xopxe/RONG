@@ -22,7 +22,7 @@ local view_merge = function(rong, vi)
       assert(si.p, "Malformed view, missing p")
 			if metasl.p<si.p and not view.own[sid] then
 				local p_old=metasl.p
-				metasl.p = p_old + ( 1 - p_old ) * si.p * conf.P_encounter
+				metasl.p = p_old + ( 1 - p_old ) * si.p * conf.p_encounter
 			end
     else
       view:add(sid, si.filter, false)

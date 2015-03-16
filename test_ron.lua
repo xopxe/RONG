@@ -42,14 +42,15 @@ local conf = {
   inventory_size = 3,
   delay_message_emit = 1,
   reserved_owns =1,
-  max_owning_time = math.huge,
+  max_owning_time = 60*60*24,
   max_ownnotif_transmits = math.huge,
   max_notif_transmits = math.huge,
 
 	ranking_find_replaceable = 'find_replaceable_fifo',
+  min_n_broadcasts = 0,
 
 	gamma = 0.9998,
-	P_encounter = 0.05,
+	p_encounter = 0.05,
 	min_p = 0,
 
   --neighborhood_window = 1, -- for debugging, should be disabled
