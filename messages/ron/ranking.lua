@@ -9,7 +9,7 @@ local function mesage_quality(rong, m)
 	--accumulated quality for a message
 	for s,_ in pairs(m.matches) do
 		if not view.own[s] then --don't accumulate quality from own subs
-			q = q + s.meta.p_encounter 
+			q = q + s.meta.p 
 		end
 	end
 	return q
@@ -342,12 +342,15 @@ function M.find_replaceable_fifo (rong)
 			local m = inv[mid]
       local meta = m.meta
 			--conf.log('$$$$', min_ts_mid, min_ts, m.meta.init_time, m.message._in_transit )
-			local em=meta.meta.init_time - meta.message._in_transit --estimated emission time
+	
+      --local em=meta.init_time - meta.message._in_transit --estimated emission time
+      local em = meta.init_time
+      
 			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=m.message.notification_id
 			if not inv.own[m]
 			and (not min_ts_mid or min_ts > em) 
-			and m.emited > conf.min_n_broadcasts then
+			and m.meta.emited > conf.min_n_broadcasts then
 				min_ts_mid, min_ts = mid, em
 			end
 		end

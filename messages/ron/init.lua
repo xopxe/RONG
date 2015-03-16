@@ -123,6 +123,7 @@ local process_incoming_view = function (rong, view)
   local matching = messaging.select_matching( rong, view )
   local pending, inv = rong.pending, rong.inv
   for mid, _ in pairs(matching) do
+    inv[mid].meta.emited = inv[mid].meta.emited + 1 --FIXME do inside pending?
     rong.pending:add(mid, inv[mid].data)
   end
 end
