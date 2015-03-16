@@ -4,3 +4,6 @@
 #vim swap
 *.swp
 *.sublime-*
+
+*.bak
+
