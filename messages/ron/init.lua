@@ -71,7 +71,7 @@ local notifs_merge = function (rong, notifs)
 			meta.seen=meta.seen+1
 			pending:del(nid) --if we were to emit this, don't.
 		else	
-      if not seen_notifs:contains(seen_notifs, nid) then
+      if not seen_notifs:contains(nid) then
         seen_notifs:pushright(nid)
         while seen_notifs:len()>conf.max_notifid_tracked do
           seen_notifs:popleft()
@@ -90,15 +90,15 @@ local notifs_merge = function (rong, notifs)
             sched.signal(s, n)
           end
         end
+        
+        --make sure table doesn't grow beyond inventory_size
+        while inv:len()>conf.inventory_size do
+          local mid=ranking_find_replaceable(rong)
+          inv:del(mid or nid)
+          log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
+            tostring(mid or nid), inv:len())
+        end
       end
-      
-			--make sure table doesn't grow beyond inventory_size
-			while inv:len()>conf.inventory_size do
-				local mid=ranking_find_replaceable(rong)
-				inv:del(mid or nid)
-        log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
-          tostring(mid or nid), inv:len())
-			end
 		end
 	end
 

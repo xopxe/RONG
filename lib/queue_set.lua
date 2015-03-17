@@ -1,7 +1,10 @@
 local QueueSet = {}
 function QueueSet.new ()
    local inventory = {}
-   return {first = 0, last = -1, inventory=inventory}
+   return setmetatable(
+     {first = 0, last = -1, inventory=inventory}, 
+     {__index = QueueSet}
+   )
 end
 
 function QueueSet.pushleft (list, value)
