@@ -8,6 +8,9 @@ local messaging = require 'rong.lib.messaging'
 local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
+local queue_set = require "rong.lib.queue_set"
+local seen_notifs = queue_set.new()
+
 local view_merge = function(rong, vi)
   local now = sched.get_time()
   
@@ -60,7 +63,7 @@ local notifs_merge = function (rong, notifs)
 		end
 	end
 
-  for nid, data in pairs(notifs) do
+  for nid, data in pairs(notifs) do    
 		local ni=inv[nid]
 		if ni then
       local meta = ni.meta
@@ -68,17 +71,24 @@ local notifs_merge = function (rong, notifs)
 			meta.seen=meta.seen+1
 			pending:del(nid) --if we were to emit this, don't.
 		else	
-      inv:add(nid, data, false)
-      rong.messages.init_notification(nid) --FIXME refactor?
-      local n = inv[nid]
-      
-      -- signal arrival of new notification to subscriptions
-      local matches=n.matches
-      for sid, s in pairs(rong.view.own) do
-        if matches[s] then
-          log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s'
-            , tostring(nid), tostring(sid))
-          sched.signal(s, n)
+      if not seen_notifs:contains(seen_notifs, nid) then
+        seen_notifs:pushright(nid)
+        while seen_notifs:len()>conf.max_notifid_tracked do
+          seen_notifs:popleft()
+        end
+        
+        inv:add(nid, data, false)
+        rong.messages.init_notification(nid) --FIXME refactor?
+        local n = inv[nid]
+        
+        -- signal arrival of new notification to subscriptions
+        local matches=n.matches
+        for sid, s in pairs(rong.view.own) do
+          if matches[s] then
+            log('RON', 'DEBUG', 'Singalling arrived notification: %s to %s'
+              , tostring(nid), tostring(sid))
+            sched.signal(s, n)
+          end
         end
       end
       

@@ -7,7 +7,7 @@ local log = require 'lumen.log'
 log.setlevel('ALL', 'RONG')
 log.setlevel('ALL', 'RON')
 log.setlevel('ALL', 'TEST')
---log.setlevel('ALL')
+log.setlevel('ALL')
 
 local selector = require 'lumen.tasks.selector'
 selector.init({service='luasocket'})
@@ -45,6 +45,8 @@ local conf = {
   max_owning_time = 60*60*24,
   max_ownnotif_transmits = math.huge,
   max_notif_transmits = math.huge,
+  
+  max_notifid_tracked = 5000,
 
 	ranking_find_replaceable = 'find_replaceable_fifo',
   min_n_broadcasts = 0,
