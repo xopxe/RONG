@@ -218,14 +218,17 @@ local process_incoming_view = function (rong, view)
     sched.signal(neighbor[view.emitter])
   else
     -- create timer
-    neighbor[view.emitter] = sched.new_task(function ()
+    local reg = {}
+    neighbor[view.emitter] = reg
+    reg.task = sched.new_task(function ()
       local waitd = {
-        sched.running_task, 
+        reg, 
         timeout = conf.neighborhood_window or 2*conf.send_views_timeout
       }
       repeat
         local ev = sched.wait(waitd)
       until ev == nil -- exit on timeout
+      neighbor[view.emitter].task = nil
       neighbor[view.emitter] = nil
     end)
     
@@ -301,7 +304,8 @@ M.new = function(rong)
     
     local neighbor = rong.neighbor
     for k, timer in pairs (neighbor) do
-      timer:kill()
+      timer.task:kill()
+      neighbor[k].task = nil
       neighbor[k] = nil
     end
     
