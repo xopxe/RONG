@@ -46,6 +46,7 @@ local conf = {
 }
 
 math.randomseed(n)
+io.stdout:setvbuf('line') 
 
 local rong = require 'rong'.new(conf)
 
@@ -55,11 +56,15 @@ local s = rong:subscribe(
     {'target', '=', 'node'..n },
   }
 )
+local arrived = {}
 log('TEST', 'INFO', 'SUBSCRIBING FOR target=%s', tostring(s.filter[1][3]))
 sched.sigrun({s}, function(s, n) 
-  log('TEST', 'INFO', 'ARRIVED FOR %s: %s',tostring(s.id), tostring(n.id))
-  for k, v in pairs (n.data) do
-    log('TEST', 'INFO', '>>>>> %s=%s',tostring(k), tostring(v))
+  if not arrived[n.id] then 
+    log('TEST', 'INFO', 'ARRIVED FOR %s: %s',tostring(s.id), tostring(n.id))
+    for k, v in pairs (n.data) do
+      log('TEST', 'INFO', '>>>>> %s=%s',tostring(k), tostring(v))
+    end
+    arrived[n.id] = true
   end
 end)
 
