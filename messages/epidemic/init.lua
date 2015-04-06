@@ -92,13 +92,18 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   -- Open connection
   log('EPIDEMIC', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
-  local skt = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
+  local skt, err = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
     nil, nil, 'line', 'stream')
+    
+  if not skt then 
+    log('BSW', 'DEBUG', 'Sender failed to connect: %s', err)
+    return
+  end
   
   -- send summary vector
   local sv = {} -- summary vector
   for mid, m in pairs (inv) do
-      sv[#sv+1] = mid
+    sv[#sv+1] = mid
   end
   local svs = assert(encode_f({sv = sv}))
   
@@ -208,7 +213,7 @@ local process_incoming_view = function (rong, view)
     -- create timer
     local reg = {}
     neighbor[view.emitter] = reg
-    reg.task = sched.new_task(function ()
+    reg.task = sched.run(function ()
       local waitd = {
         reg, 
         timeout = conf.neighborhood_window or 2*conf.send_views_timeout

@@ -97,8 +97,13 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   -- Open connection
   log('BSW', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
-  local skt = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
+  local skt, err = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
     nil, nil, 'line', 'stream')
+  
+  if not skt then 
+    log('BSW', 'DEBUG', 'Sender failed to connect: %s', err)
+    return
+  end
   
   -- send summary vector
   local sv = {} -- summary vector
@@ -155,6 +160,12 @@ end)
 local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
+    if skt==nil then
+      log('BSW', 'DEBUG', 'Socket error: %s', tostring(err))
+      print(debug.traceback())
+      os.exit()
+    end
+    
     log('BSW', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
     -- sched.run( function() -- removed, only single client
       
@@ -162,12 +173,12 @@ local get_receive_transfer_handler = function (rong)
     local ssv, errread = skt.stream:read()
     if not ssv then
       log('BSW', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
-      return true
+      skt:close()
     end
     local sv, parserr = decode_f(ssv)
     if not sv then
       log('BSW', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
-      return true
+      skt:close()
     end
     
      -- send request
@@ -185,7 +196,7 @@ local get_receive_transfer_handler = function (rong)
     local ok, errsend, length = skt:send_sync(sreq..'\n')  
     if not ok then
       log('BSW', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
-      return true
+      skt:close()
     end
     
     -- receive data
@@ -205,7 +216,6 @@ local get_receive_transfer_handler = function (rong)
     until not sdata or not data
     
     skt:close()
-    return true
     -- end)
   end
 end
@@ -215,12 +225,14 @@ local process_incoming_view = function (rong, view)
   local neighbor = rong.neighbor
   if neighbor[view.emitter] then
     -- restart timer
+    log('BSW', 'DEBUG', 'Restarting neighborhood timer for: %s', tostring(view.emitter))
     sched.signal(neighbor[view.emitter])
   else
     -- create timer
+    log('BSW', 'DEBUG', 'Creating neighborhood timer for: %s', tostring(view.emitter))
     local reg = {}
     neighbor[view.emitter] = reg
-    reg.task = sched.new_task(function ()
+    reg.task = sched.run(function ()
       local waitd = {
         reg, 
         timeout = conf.neighborhood_window or 2*conf.send_views_timeout
@@ -228,6 +240,7 @@ local process_incoming_view = function (rong, view)
       repeat
         local ev = sched.wait(waitd)
       until ev == nil -- exit on timeout
+      log('BSW', 'DEBUG', 'Killing neighborhood timer for: %s', tostring(view.emitter))
       neighbor[view.emitter].task = nil
       neighbor[view.emitter] = nil
     end)
