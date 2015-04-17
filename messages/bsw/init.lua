@@ -306,7 +306,8 @@ M.new = function(rong)
     end
     --]]
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('BSW', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    log('BSW', 'DEBUG', 'Broadcast view %s: %i bytes', ms, #ms)
+
     rong.net:broadcast( ms )
   end
   

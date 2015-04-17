@@ -127,14 +127,21 @@ end
 
 local process_incoming_view = function (rong, view)
   --routing
-  view_merge( rong, view )
+  view_merge( rong, view.subs )
   
   -- forwarding
-  local matching = messaging.select_matching( rong, view )
+  local skipnotif = {}
+  for _, nid in ipairs(view.skip or {}) do
+    skipnotif[nid]= true
+  end
+  
+  local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
   for mid, _ in pairs(matching) do
-    inv[mid].meta.emited = inv[mid].meta.emited + 1 --FIXME do inside pending?
-    rong.pending:add(mid, inv[mid].data)
+    if not skipnotif[mid] then
+      inv[mid].meta.emited = inv[mid].meta.emited + 1 --FIXME do inside pending?
+      rong.pending:add(mid, inv[mid].data)
+    end
   end
 end
 
@@ -166,9 +173,18 @@ M.new = function(rong)
       print('>', type(k),k,type(v),v)
     end
     --]]
+    local ms = assert(encode_f({view={subs=view_emit}})) --FIXME tamaño!
     
-    local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('RON', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    local ms_candidate
+    local skip = {}
+    for mid, _ in pairs(rong.inv) do
+      skip[#skip+1] = mid
+      ms_candidate = assert(encode_f({view={subs=view_emit, skip=skip}})) 
+      if #ms_candidate>1472 then break end
+      ms = ms_candidate
+    end
+    
+    log('RON', 'DEBUG', 'Broadcast view %s: %i bytes', ms, #ms)
     rong.net:broadcast( ms )
   end
   

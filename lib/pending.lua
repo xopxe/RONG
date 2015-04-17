@@ -20,7 +20,7 @@ M.new = function (rong)
         local m = {}
         m[nid]=n
         local s = encode_f( {notifs=m} ) --FIXME tamaño!
-          log('RONG', 'DEBUG', 'Broadcasting notification: %i bytes', #s)
+          log('RONG', 'DEBUG', 'Broadcasting notification %s: %i bytes', nid, #s)
         rong.net:broadcast( s )
       end)
     end,
