@@ -50,6 +50,7 @@ local notif_merge = function (rong, notif)
     rong.messages.init_notification(nid) --FIXME refactor?
     local n = inv[nid]
     n.meta.hops = reg.hops
+    n.meta.init_time = reg.init_time
 
     -- signal arrival of new notification to subscriptions
     local matches=n.matches
@@ -89,17 +90,24 @@ end
 sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local inv = rong.inv
   
+  if inv:len()==0 then
+    log('EPIDEMIC', 'DEBUG', 'Sender not connecting, nothing to offer')
+    return
+  end
+  
   -- Open connection
   log('EPIDEMIC', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
   local skt, err = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
     nil, nil, 'line', 'stream')
-    
+   
   if not skt then 
-    log('BSW', 'DEBUG', 'Sender failed to connect: %s', err)
+    log('EPIDEMIC', 'DEBUG', 'Sender failed to connect: %s', err)
     return
   end
   
+  skt.stream:set_timeout(5, 5)
+
   -- send summary vector
   local sv = {} -- summary vector
   for mid, m in pairs (inv) do
@@ -108,7 +116,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local svs = assert(encode_f({sv = sv}))
   
   log('EPIDEMIC', 'DEBUG', 'Sender SV: %i notifs, %i bytes', 
-    #sv, #svs)  
+    #sv, #svs+1)  
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
     log('EPIDEMIC', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
@@ -117,7 +125,9 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   
   -- read request
+  log('EPIDEMIC', 'DEBUG', 'Sender REQ read started...')
   local reqs, errread = skt.stream:read()
+  log('EPIDEMIC', 'DEBUG', 'Sender REQ read finished: %s', tostring(reqs))
   if not reqs then
     log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
     skt:close()
@@ -127,17 +137,23 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   -- send requested data
   local req = assert(decode_f(reqs))
   for _, mid in ipairs (req.req) do
-    local out = {}
-    out[mid] = {
-      data = inv[mid].data,
-      hops = inv[mid].meta.hops+1
-    }
-    local outs = assert(encode_f(out))
-    log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #outs)      
-    local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
-    if not okdata then
-      log('EPIDEMIC', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
-      break;
+    local m = inv[mid]
+    if not m then -- could've been deleted since offered
+      log('EPIDEMIC', 'DEBUG', 'Got Request but was removed since offer: %s', tostring(mid))
+    else   
+      local out = {}
+      out[mid] = {
+        data = inv[mid].data,
+        hops = inv[mid].meta.hops+1,
+        init_time = m.meta.init_time,
+      }
+      local outs = assert(encode_f(out))
+      log('EPIDEMIC', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #outs+1)      
+      local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')  
+      if not okdata then
+        log('EPIDEMIC', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
+        break;
+      end
     end
   end
   
@@ -149,57 +165,62 @@ local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
     log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
-    -- sched.run( function() -- removed, only single client
+    sched.run( function() -- removed, only single client
+      skt.stream:set_timeout(5, 5)
       
-    -- read summary vector
-    local ssv, errread = skt.stream:read()
-    if not ssv then
-      log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
-      return true
-    end
-    local sv, parserr = decode_f(ssv)
-    if not sv then
-      log('EPIDEMIC', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
-      return true
-    end
-    
-     -- send request
-    local req = {}
-    for _, mid in ipairs(sv.sv) do
-      if not inv[mid] then
-        req[#req+1] = mid
+      -- read summary vector
+      local ssv, errread = skt.stream:read()
+      if not ssv then
+        log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
+         skt:close(); return
       end
-    end
-    
-    local sreq = assert(encode_f({req = req}))
-    
-    log('EPIDEMIC', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
-      #req, #sreq)  
-    local ok, errsend, length = skt:send_sync(sreq..'\n')  
-    if not ok then
-      log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
-      return true
-    end
-    
-    -- receive data
-    repeat
-      local data, decoderr
-      local sdata, errdataread = skt.stream:read()
-      if sdata then
-        data, decoderr = decode_f(sdata)
-        if data then
-          notif_merge(rong, data)
-        else
-          log('EPIDEMIC', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
-        end        
-      elseif errdataread~='closed' then
-        log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+      local sv, parserr = decode_f(ssv)
+      if not sv then
+        log('EPIDEMIC', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
+         skt:close(); return
       end
-    until not sdata or not data
-    
-    skt:close()
-    return true
-    -- end)
+      
+       -- send request
+      local req = {}
+      for _, mid in ipairs(sv.sv) do
+        if not inv[mid] then
+          req[#req+1] = mid
+        end
+      end
+      
+      if #req == 0 then
+        log('EPIDEMIC', 'DEBUG', 'Receiver early close, nothing to request')
+        skt:close(); return
+      end
+      
+      local sreq = assert(encode_f({req = req}))
+      
+      log('EPIDEMIC', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
+        #req, #sreq+1)  
+      local ok, errsend, length = skt:send_sync(sreq..'\n')  
+      if not ok then
+        log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
+        skt:close(); return
+      end
+      
+      -- receive data
+      repeat
+        local data, decoderr
+        local sdata, errdataread = skt.stream:read()
+        if sdata then
+          data, decoderr = decode_f(sdata)
+          if data then
+            notif_merge(rong, data)
+          else
+            log('EPIDEMIC', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
+          end        
+        elseif errdataread~='closed' then
+          log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+        end
+      until not sdata or not data
+      
+      skt:close()
+    end)
   end
 end
 

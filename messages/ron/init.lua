@@ -118,7 +118,7 @@ local apply_aging = function (rong)
     end
     --delete if p_encounter too small
     if meta.p < (conf.min_p or 0) then
-      log('RONG', 'Purging subscription %s with p=%s',
+      log('RON', 'Purging subscription %s with p=%s',
         tostring(sid), tostring(meta.p_encounter))
       view:del(sid)
     end
@@ -168,7 +168,7 @@ M.new = function(rong)
     --]]
     
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('RONG', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    log('RON', 'DEBUG', 'Broadcast view: %s', tostring(ms))
     rong.net:broadcast( ms )
   end
   

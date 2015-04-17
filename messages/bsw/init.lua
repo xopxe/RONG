@@ -52,6 +52,7 @@ local notif_merge = function (rong, notif)
     local n = inv[nid]
     n.meta.hops = reg.hops
     n.meta.copies = reg.copies
+    n.meta.init_time = reg.init_time
 
     -- signal arrival of new notification to subscriptions
     local matches=n.matches
@@ -65,21 +66,25 @@ local notif_merge = function (rong, notif)
     
     if n.target then
       if n.target == rong.conf.name then
-        log('BSW', 'DEBUG', 'Purging notification on destination: %s', tostring(nid))
+        log('BSW', 'DEBUG', 'Purging notification on destination: %s (%i copies)',
+          tostring(nid). n.meta.copies)
         inv:del(nid)
       end
     elseif n.meta.hops >= rong.conf.max_hop_count then
-      log('BSW', 'DEBUG', 'Purging notification on hop count: %s', tostring(nid))
+      log('BSW', 'DEBUG', 'Purging notification on hop count: %s (%i copies)',
+          tostring(nid). n.meta.copies)
       inv:del(nid)
     elseif n.meta.copies == 0 then
       log('BSW', 'DEBUG', 'Purging notification on wait mode: %s', tostring(nid))
       inv:del(nid)
     end
     
-    while inv:len() > (rong.conf.inventory_size or math.huge) do
-      local oldest, oldesttime
+    log('BSW', 'DEBUG', 'Buffer size verification: %i, inventory_size=%s', 
+      inv:len(), tostring(rong.conf.inventory_size))
+    while inv:len() > rong.conf.inventory_size do
+      local oldest, oldesttime = nil, math.huge
       for mid, m in pairs (inv) do
-        if m.meta.init_time < (oldesttime or math.huge) then
+        if m.meta.init_time < oldesttime then
           oldest, oldesttime = mid, m.meta.init_time
         end
       end
@@ -94,9 +99,14 @@ end
 sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local inv = rong.inv
   
+  if inv:len()==0 then
+    log('BSW', 'DEBUG', 'Sender not connecting, nothing to offer')
+    return
+  end
+
   -- Open connection
   log('BSW', 'DEBUG', 'Sender connecting to: %s:%s', 
-    tostring(view.transfer_ip),tostring(view.transfer_port))
+    tostring(view.transfer_ip), tostring(view.transfer_port))
   local skt, err = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
     nil, nil, 'line', 'stream')
   
@@ -104,6 +114,8 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
     log('BSW', 'DEBUG', 'Sender failed to connect: %s', err)
     return
   end
+  
+  skt.stream:set_timeout(5, 5)
   
   -- send summary vector
   local sv = {} -- summary vector
@@ -113,43 +125,48 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local svs = assert(encode_f({sv = sv}))
   
   log('BSW', 'DEBUG', 'Sender SV: %i notifs, %i bytes', 
-    #sv, #svs)  
+    #sv, #svs+1)  
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
     log('BSW', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
-    skt:close()
-    return;
+    skt:close() return;
   end
   
   -- read request
+  log('BSW', 'DEBUG', 'Sender REQ read started...')
   local reqs, errread = skt.stream:read()
+  log('BSW', 'DEBUG', 'Sender REQ read finished: %s', tostring(reqs))
   if not reqs then
     log('BSW', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
-    skt:close()
-    return;
+    skt:close(); return
   end
   
   -- send requested data
   local req = assert(decode_f(reqs))
   for _, mid in ipairs (req.req) do
-    local out = {}
     local m = inv[mid]
-    local transfer_copies = math.floor(m.meta.copies/2)
-    out[mid] = {
-      data = m.data,
-      hops = m.meta.hops+1,
-      copies = transfer_copies,
-    }
-    local outs = assert(encode_f(out))
-    log('BSW', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #outs)      
-    local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')
-    if okdata then
-      log('BSW', 'DEBUG', 'Sender DATA transfered %i copies for %s', 
-        transfer_copies, tostring(mid))
-      m.meta.copies = m.meta.copies - transfer_copies
+    if not m then -- could've been deleted since offered
+      log('BSW', 'DEBUG', 'Got Request but was removed since offer: %s', tostring(mid))
     else
-      log('BSW', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
-      break;
+      local out = {}
+      local transfer_copies = math.floor(m.meta.copies/2)
+      out[mid] = {
+        data = m.data,
+        hops = m.meta.hops+1,
+        copies = transfer_copies,
+        init_time = m.meta.init_time,
+      }
+      local outs = assert(encode_f(out))
+      log('BSW', 'DEBUG', 'Sender DATA built: %s, %i bytes', mid, #outs+1)      
+      local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')
+      if okdata then
+        m.meta.copies = m.meta.copies - transfer_copies
+        log('BSW', 'DEBUG', 'Sender DATA transfered %i copies and kept %i for %s', 
+          transfer_copies, m.meta.copies, tostring(mid))
+      else
+        log('BSW', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
+        break;
+      end
     end
   end
   
@@ -161,62 +178,70 @@ local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
     if skt==nil then
-      log('BSW', 'DEBUG', 'Socket error: %s', tostring(err))
+      log('BSW', 'ERROR', 'Socket error: %s', tostring(err))
       print(debug.traceback())
       os.exit()
     end
     
-    log('BSW', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
-    -- sched.run( function() -- removed, only single client
+    log('BSW', 'DEBUG', 'Receiver accepted: %s:%s', skt:getpeername())
+    sched.run( function() -- removed, only single client
+      skt.stream:set_timeout(5, 5)
       
-    -- read summary vector
-    local ssv, errread = skt.stream:read()
-    if not ssv then
-      log('BSW', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
-      skt:close()
-    end
-    local sv, parserr = decode_f(ssv)
-    if not sv then
-      log('BSW', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
-      skt:close()
-    end
-    
-     -- send request
-    local req = {}
-    for _, mid in ipairs(sv.sv) do
-      if not inv[mid] then
-        req[#req+1] = mid
+      -- read summary vector
+      local ssv, errread = skt.stream:read()
+      if not ssv then
+        log('BSW', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
+        skt:close(); return
       end
-    end
-    
-    local sreq = assert(encode_f({req = req}))
-    
-    log('BSW', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
-      #req, #sreq)  
-    local ok, errsend, length = skt:send_sync(sreq..'\n')  
-    if not ok then
-      log('BSW', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
-      skt:close()
-    end
-    
-    -- receive data
-    repeat
-      local data, decoderr
-      local sdata, errdataread = skt.stream:read()
-      if sdata then
-        data, decoderr = decode_f(sdata)
-        if data then
-          notif_merge(rong, data)
-        else
-          log('BSW', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
-        end        
-      elseif errdataread~='closed' then
-        log('BSW', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+      local sv, parserr = decode_f(ssv)
+      if not sv then
+        log('BSW', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
+        skt:close(); return
       end
-    until not sdata or not data
-    
-    skt:close()
-    -- end)
+      
+       -- send request
+      local req = {}
+      for _, mid in ipairs(sv.sv) do
+        if not inv[mid] then
+          req[#req+1] = mid
+        end
+      end
+      
+      if #req == 0 then
+        log('BSW', 'DEBUG', 'Receiver early close, nothing to request')
+        skt:close(); return
+      end
+      
+      local sreq = assert(encode_f({req = req}))
+      
+      log('BSW', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
+        #req, #sreq+1)  
+      local ok, errsend, length = skt:send_sync(sreq..'\n')  
+      if not ok then
+        log('BSW', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
+        skt:close(); return
+      end
+      
+      -- receive data
+      repeat
+        local data, decoderr
+        log('BSW', 'DEBUG', 'Receiver DATA read started...')
+        local sdata, errdataread = skt.stream:read()
+        log('BSW', 'DEBUG', 'Receiver DATA read finished')
+        if sdata then
+          data, decoderr = decode_f(sdata)
+          if data then
+            notif_merge(rong, data)
+          else
+            log('BSW', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
+          end        
+        elseif errdataread~='closed' then
+          log('BSW', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+        end
+      until not sdata or not data
+      
+      skt:close()
+    end)
   end
 end
 
@@ -251,6 +276,7 @@ end
 
 M.new = function(rong)  
   local conf = rong.conf
+  local inv = rong.inv
   local msg = {}
 
   rong.neighbor = {}
@@ -297,22 +323,25 @@ M.new = function(rong)
     
   msg.init_notification = function (nid)
     local now = sched.get_time()
-    local n = assert(rong.inv[nid])
+    local n = assert(inv[nid])
     local meta = n.meta
     meta.init_time=now
     meta.last_seen=now
     meta.hops=0
     meta.copies = conf.start_copies
     
-    while rong.inv:len() > (rong.conf.inventory_size or math.huge) do
-      local oldest, oldesttime
-      for mid, m in pairs (rong.inv) do
-        if m.meta.init_time < (oldesttime or math.huge) then
+    log('BSW', 'DEBUG', 'Buffer size verification: %i, inventory_size=%s', 
+      inv:len(), tostring(rong.conf.inventory_size))
+    while inv:len() > rong.conf.inventory_size do
+      local oldest, oldesttime = nil, math.huge
+      for mid, m in pairs (inv) do
+        if m.meta.init_time < oldesttime then
           oldest, oldesttime = mid, m.meta.init_time
         end
       end
-      log('BSW', 'DEBUG', 'Purging notification on full buff: %s', tostring(oldest))
-      rong.inv:del(oldest)
+      log('BSW', 'DEBUG', 'Purging notification on full buffer: %s (%i copies)', 
+        tostring(oldest), inv[oldest].meta.copies)
+      inv:del(oldest)
     end
     
     local neighbor = rong.neighbor

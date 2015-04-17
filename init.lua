@@ -30,14 +30,14 @@ M.new = function(conf)
   
   local incomming_handler = function (data, err)
     if data then 
-      log('RONG', 'DEBUG', 'Incomming data: %s', tostring(data))
+      --log('RONG', 'DEBUG', 'Incomming: %s', tostring(data))
       local m = decode_f(data)
       for k, v in pairs(m) do
         if messages.incomming[k] then 
-          log('RONG', 'DEBUG', ' Incomming found: %s', tostring(k))
+          --log('RONG', 'DEBUG', ' Incomming found: %s', tostring(k))
           messages.incomming[k] (rong, v)
         else
-          log('RONG', 'DEBUG', ' Incomming unknown: %s', tostring(k))
+          log('RONG', 'WARN', ' Incomming unknown: %s', tostring(k))
         end
       end
       --[[
@@ -49,7 +49,7 @@ M.new = function(conf)
       end
       --]]
     else
-      log('RONG', 'DEBUG', 'Incomming error: %s', tostring(err))
+      log('RONG', 'WARN', 'Incomming error: %s', tostring(err))
     end
     return true
   end
