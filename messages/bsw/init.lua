@@ -115,7 +115,8 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
     return
   end
   
-  skt.stream:set_timeout(5, 5)
+  sched.sleep(1)
+  skt.stream:set_timeout(5,5)
   
   -- send summary vector
   local sv = {} -- summary vector
@@ -185,7 +186,7 @@ local get_receive_transfer_handler = function (rong)
     
     log('BSW', 'DEBUG', 'Receiver accepted: %s:%s', skt:getpeername())
     sched.run( function() -- removed, only single client
-      skt.stream:set_timeout(5, 5)
+      --skt.stream:set_timeout(5,5)
       
       -- read summary vector
       local ssv, errread = skt.stream:read()
