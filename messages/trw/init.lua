@@ -138,28 +138,30 @@ local get_receive_token_handler = function (rong)
   return function(_, sktd, err)
     assert(sktd, err)
     log('TRW', 'DEBUG', 'Client accepted: %s', tostring(sktd.stream))
-    -- sched.run( function() -- removed, only single client
-    local chunks = {}
-    repeat
-      local chunk, err, err2 = sktd.stream:read()
-      ---log('TRW', 'DEBUG', '>> %s', tostring(chunk))
-      if chunk then chunks[#chunks+1] = chunk end
-    until chunk == nil
-    local sc = table.concat(chunks)
-    log('TRW', 'DEBUG', 'Client received %i bytes', #sc)
-    
-    local token = decode_f(sc)
-    if token then
-      -- got token
-      log('TRW', 'DETAIL', 'Got token: %s', tostring(token.token))
-      notifs_merge(rong, token.notifs)
-      rong.token = token.token
-      rong.token_ts = sched.get_time()
-    else
-      -- failed to get token
-      log('TRW', 'DETAIL', 'Failed to get token')
-    end
-    -- end)
+    sched.run( function() -- removed, only single client
+      sktd.stream:set_timeout(5,5)
+      
+      local chunks = {}
+      repeat
+        local chunk, err, err2 = sktd.stream:read()
+        ---log('TRW', 'DEBUG', '>> %s', tostring(chunk))
+        if chunk then chunks[#chunks+1] = chunk end
+      until chunk == nil
+      local sc = table.concat(chunks)
+      log('TRW', 'DEBUG', 'Client received %i bytes', #sc)
+      
+      local token = decode_f(sc)
+      if token then
+        -- got token
+        log('TRW', 'DETAIL', 'Got token: %s', tostring(token.token))
+        notifs_merge(rong, token.notifs)
+        rong.token = token.token
+        rong.token_ts = sched.get_time()
+      else
+        -- failed to get token
+        log('TRW', 'DETAIL', 'Failed to get token')
+      end
+    end)
   end
 end
 
