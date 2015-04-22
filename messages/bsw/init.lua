@@ -115,7 +115,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
     return
   end
   
-  sched.sleep(1)
+  --sched.sleep(1)
   skt.stream:set_timeout(5,5)
   
   -- send summary vector
