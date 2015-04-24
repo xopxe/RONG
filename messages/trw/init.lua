@@ -93,10 +93,18 @@ sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
   local inv = rong.inv
   
   -- Open connection
-  log('TRW', 'DEBUG', 'Client connecting to: %s:%s', 
+  log('TRW', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
-  local skt = selector.new_tcp_client(view.transfer_ip,view.transfer_port)
+  local skt, errconn = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
+    nil, nil, 'line', 'stream')
   
+  if not skt then 
+    log('TRW', 'DEBUG', 'Sender failed to connect: %s', errconn)
+    return
+  end
+  
+  skt.stream:set_timeout(5,5)
+
   -- Build token with everithing in buffer
   local notifs = {}
   for mid, m in pairs (inv) do
@@ -108,75 +116,130 @@ sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
     token = rong.token,
     notifs = notifs,
   }
-  local ms = assert(encode_f(token)) --FIXME tamaño!
+  local ms = assert(encode_f(token))
   
   -- Send and then disconnect
-  log('TRW', 'DETAIL', 'Client sending %i notifs, %i bytes', 
-    inv:len(), #ms)  
-  local ok, err, length = skt:send_sync(ms)
-  skt:close()
+  log('TRW', 'DETAIL', 'Sender sending token %s, %i notifs, %i bytes', 
+    token.token, inv:len(), #ms+1)  
+  local ok, err, length = skt:send_sync(ms..'\n')
   
   if ok then
-    --token handled
-    log('TRW', 'DETAIL', 'Handed over token: %s', tostring(rong.token))
-    rong.token = nil
-    rong.token_ts = nil
+    --wait for a confirmation  (will accept anything)
+    --print ('?????', ok, err, length)
+    local line, err, err2 = skt.stream:read()
+    --print ('!!!!!',line, err, err2 )
     
-    --remove all handled notifiactions
-    for mid, _  in pairs (notifs) do
-      inv:del(mid)
+    if line then 
+      --token handled
+      log('TRW', 'DETAIL', 'Sender handed over token: %s', tostring(rong.token))
+      rong.token = nil
+      rong.token_ts = nil
+      
+      --remove all handled notifiactions
+      for mid, _  in pairs (notifs) do
+        --inv:del(mid) --!!!!!!!!!
+      end
+    else
+      log('TRW', 'DETAIL', 'Sender failed reading transfer confirmation: %s', err)
     end
   else
     --token not handled
-    log('TRW', 'DETAIL', 'Failed to hand over token %s with error %s (%i bytes sent)', 
-      tostring(rong.token), tostring(err), length)
+    log('TRW', 'DETAIL', 'Sender failed to send token with error %s (%i bytes sent)', 
+      tostring(err), length)
   end
+  skt:close()
 end)
 
 -- Get handler for reading a token from socket
 local get_receive_token_handler = function (rong)
   return function(_, sktd, err)
     assert(sktd, err)
-    log('TRW', 'DEBUG', 'Client accepted: %s', tostring(sktd.stream))
-    sched.run( function() -- removed, only single client
+    if rong.token and rong.token  then
+      log('TRW', 'DEBUG', 'Already got a token, refusing client: %s:%s', sktd:getpeername())
+      sktd:close()
+      return
+    end
+    
+    log('TRW', 'DEBUG', 'Receiver accepted client: %s:%s', sktd:getpeername())
+    --sched.run( function() -- removed, only single client
       sktd.stream:set_timeout(5,5)
       
-      local chunks = {}
+      local sc = ''
+      local token
       repeat
         local chunk, err, err2 = sktd.stream:read()
-        ---log('TRW', 'DEBUG', '>> %s', tostring(chunk))
-        if chunk then chunks[#chunks+1] = chunk end
-      until chunk == nil
-      local sc = table.concat(chunks)
-      log('TRW', 'DEBUG', 'Client received %i bytes', #sc)
+        --log('TRW', 'DEBUG', 'Received chunk "%s" "%s" "%s"',
+        --  tostring(chunk), tostring(err), tostring(err2))
+        if chunk then
+          sc = sc..chunk
+          token = decode_f(sc)
+        end
+      until sc or not chunk
+      log('TRW', 'DEBUG', 'Receiver got transfer (%i bytes)', #sc)
       
-      local token = decode_f(sc)
       if token then
         -- got token
-        log('TRW', 'DETAIL', 'Got token: %s', tostring(token.token))
+        log('TRW', 'DETAIL', 'Receiver parsed token: %s', tostring(token.token))
         notifs_merge(rong, token.notifs)
         rong.token = token.token
         rong.token_ts = sched.get_time()
+        sktd:send_async(encode_f({accepted=true})..'\n')
       else
         -- failed to get token
         log('TRW', 'DETAIL', 'Failed to get token')
       end
-    end)
+    --sktd:close() --commented because of confirmation retries... ????
+    --end)
   end
 end
 
 local process_incoming_view = function (rong, view)
-  --view_merge( rong, view )
+  local conf = rong.conf
   
-  --FIXME, add selection logic
-  --handle_token(rong, view)
+  --[[
+  -- UNTESTED select a neighbor from a list of seen in a time window 
+  if sched.get_time() - rong.token_ts > (conf.token_hold_time or 0) 
+    and not view.token then
+    local neighbor = rong.neighbor
+    if neighbor[view.emitter] then
+      -- restart timer
+      log('TRW', 'DEBUG', 'Restarting neighborhood timer for: %s', tostring(view.emitter))
+      sched.signal(neighbor[view.emitter])
+    else
+      -- create timer
+      log('TRW', 'DEBUG', 'Creating neighborhood timer for: %s', tostring(view.emitter))
+      local reg = {view=view}
+      neighbor[view.emitter] = reg
+      reg.task = sched.run(function ()
+        local waitd = {
+          reg, 
+          timeout = conf.neighborhood_window or 2*conf.send_views_timeout
+        }
+        repeat
+          local ev = sched.wait(waitd)
+        until ev == nil -- exit on timeout
+        log('TRW', 'DEBUG', 'Killing neighborhood timer for: %s', tostring(view.emitter))
+        neighbor[view.emitter].task = nil
+        neighbor[view.emitter] = nil
+      end)
+      
+      local candidate = next(neighbor) --random selection in table
+      sched.signal (EVENT_TRANSMIT_TOKEN, rong, candidate.view)
+    end
+  end
+  --]]
+  
+  ---[[
+  -- stochastic selection of neighbor
   if rong.token then
-    if sched.get_time() - rong.token_ts > (rong.conf.token_hold_time or 0) 
+    log('TRW', 'DEBUG', 'Incomming view from %s', view.emitter)
+    if sched.get_time() - rong.token_ts > (conf.token_hold_time or 0) 
     and not view.token then
       --sched.run(transmit_token, rong, view)
       sched.signal (EVENT_TRANSMIT_TOKEN, rong, view)
     end
   end
+  --]]
 end
 
 M.new = function(rong)  
@@ -193,6 +256,8 @@ M.new = function(rong)
   sched.sigrun({tcp_server.events.accepted}, get_receive_token_handler(rong))
 
   msg.broadcast_view = function ()
+    if rong.token then return end --!!!!!!
+    
     local subs = {}
     local view_emit = {
       emitter = conf.name,
