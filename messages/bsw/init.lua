@@ -184,7 +184,7 @@ local get_receive_transfer_handler = function (rong)
       os.exit()
     end
     
-    log('BSW', 'DEBUG', 'Receiver accepted: %s:%s', skt:getpeername())
+    log('BSW', 'DEBUG', 'Receiver accepted client: %s:%s', skt:getpeername())
     sched.run( function() -- removed, only single client
       --skt.stream:set_timeout(5,5)
       
