@@ -137,7 +137,7 @@ sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
       
       --remove all handled notifiactions
       for mid, _  in pairs (notifs) do
-        --inv:del(mid) --!!!!!!!!!
+        inv:del(mid)
       end
     else
       log('TRW', 'DETAIL', 'Sender failed reading transfer confirmation: %s', err)

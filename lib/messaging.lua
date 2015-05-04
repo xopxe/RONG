@@ -19,7 +19,7 @@ M.select_matching = function (rong, vs)
 			local s=view[sid]
 			if s and matches[s] then
 				s.meta.last_success=now
-        if now-m.meta.last_seen > conf.delay_message_emit then
+        if now-m.meta.last_seen > (conf.delay_message_emit or 0) then
           --ret[mid] = m
           --pending:add(mid, m.data)
           ret[mid] = ret[mid] or {}

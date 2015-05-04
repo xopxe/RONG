@@ -158,14 +158,14 @@ M.new = function(rong)
   
   msg.broadcast_view = function ()
     apply_aging(rong)
-    local view_emit = {}
+    local subs = {}
     for sid, s in pairs (rong.view) do
       local meta = s.meta
       local sr = {
         filter = s.filter,
         p = meta.p,
       }
-      view_emit[sid] = sr
+      subs[sid] = sr
     end
     
     --[[
@@ -173,18 +173,18 @@ M.new = function(rong)
       print('>', type(k),k,type(v),v)
     end
     --]]
-    local ms = assert(encode_f({view={subs=view_emit}})) --FIXME tamaño!
+    local ms = assert(encode_f({view={subs=subs}})) --FIXME tamaño!
     
     local ms_candidate
     local skip = {}
     for mid, _ in pairs(rong.inv) do
       skip[#skip+1] = mid
-      ms_candidate = assert(encode_f({view={subs=view_emit, skip=skip}})) 
+      ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
       if #ms_candidate>1472 then break end
       ms = ms_candidate
     end
     
-    log('RON', 'DEBUG', 'Broadcast view %s: %i bytes', ms, #ms)
+    log('RON', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
     rong.net:broadcast( ms )
   end
   

@@ -12,25 +12,18 @@ local selector = require 'lumen.tasks.selector'
 local EVENT_TRIGGER_EXCHANGE = {}
 
 
---[[
--- Process incomming view message
 local view_merge = function(rong, vi)
   local now = sched.get_time()
   local view = rong.view
-  local conf = rong.conf
-    
-  -- add all not already registered subscriptions
-  for sid, si in pairs(vi.subs) do
-    local sl = view[sid]
-    if not sl then
-      log('EPIDEMIC', 'DETAIL', 'Merging subscription: %s', tostring(sid))
+  for sid, si in pairs(vi) do
+    log('BSW', 'DEBUG', 'Merging subscription: %s', tostring(sid))
+    if not view[sid] then
       view:add(sid, si.filter, false)
-      sl = view[sid]
+      local sl = view[sid]
       sl.meta.last_seen = now
     end
   end
 end
---]]
 
 -- Process incomming token
 local notif_merge = function (rong, notif)
@@ -75,7 +68,7 @@ local notif_merge = function (rong, notif)
           tostring(nid). n.meta.copies)
       inv:del(nid)
     elseif n.meta.copies == 0 then
-      log('BSW', 'DEBUG', 'Purging notification on wait mode: %s', tostring(nid))
+      log('BSW', 'WARN', 'Purging notification on wait mode: %s', tostring(nid))
       inv:del(nid)
     end
     
@@ -121,7 +114,9 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   -- send summary vector
   local sv = {} -- summary vector
   for mid, m in pairs (inv) do
-      sv[#sv+1] = mid
+      if m.meta.copies>1 then
+        sv[#sv+1] = mid
+      end
   end
   local svs = assert(encode_f({sv = sv}))
   
@@ -143,12 +138,35 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   end
   
   -- send requested data
+  local served_notif = {}
+  local matching = messaging.select_matching( rong, view.subs )
+  for mid, _ in pairs(matching) do
+    local m = inv[mid]
+    local out = {}
+    out[mid] = {
+      data = m.data,
+      hops = m.meta.hops+1,
+      copies = 0,
+      init_time = m.meta.init_time,
+    }
+    local outs = assert(encode_f(out))
+    served_notif[mid] = true
+    log('BSW', 'DEBUG', 'Sender DATA direct delivery: %s, %i bytes', mid, #outs+1)      
+    local okdata, errsenddata, lengthdata = skt:send_sync(outs..'\n')
+    if okdata then
+      log('BSW', 'DEBUG', 'Sender DATA delivered directly %s', tostring(mid))
+      --inv:del(mid)
+    else
+      log('BSW', 'DEBUG', 'Sender DATA direct delivery failed: %s', tostring(errsenddata))
+    end
+  end
+  
   local req = assert(decode_f(reqs))
   for _, mid in ipairs (req.req) do
     local m = inv[mid]
     if not m then -- could've been deleted since offered
       log('BSW', 'DEBUG', 'Got Request but was removed since offer: %s', tostring(mid))
-    else
+    elseif not served_notif[mid] then
       local out = {}
       local transfer_copies = math.floor(m.meta.copies/2)
       out[mid] = {
@@ -168,6 +186,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
         log('BSW', 'DEBUG', 'Sender DATA transfer failed: %s', tostring(errsenddata))
         break;
       end
+      served_notif[mid]=true
     end
   end
   
@@ -213,6 +232,7 @@ local get_receive_transfer_handler = function (rong)
         skt:close(); return
       end
       
+      local view_emit = {}
       local sreq = assert(encode_f({req = req}))
       
       log('BSW', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
@@ -247,6 +267,8 @@ local get_receive_transfer_handler = function (rong)
 end
 
 local process_incoming_view = function (rong, view)
+  view_merge( rong, view.subs )
+  
   local conf = rong.conf
   local neighbor = rong.neighbor
   if neighbor[view.emitter] then
@@ -291,21 +313,21 @@ M.new = function(rong)
 
   msg.broadcast_view = function ()
     local subs = {}
+    for sid, s in pairs (rong.view.own) do
+      local meta = s.meta
+      local sr = {
+        filter = s.filter,
+        --p = meta.p,
+      }
+      subs[sid] = sr
+    end
     local view_emit = {
       emitter = conf.name,
       transfer_ip = conf.listen_on_ip,
       transfer_port = conf.transfer_port,
-      --notifs = ???,
+      subs=subs,
     }
-    --[[
-    for sid, s in pairs (rong.view) do
-      local meta = s.meta
-      local sr = {
-        filter = s.filter,
-      }
-      subs[sid] = sr
-    end
-    --]]
+    
     local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
     log('BSW', 'DEBUG', 'Broadcast view %s: %i bytes', ms, #ms)
 
