@@ -7,7 +7,7 @@ local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
 M.new = function (rong)
   local net = rong.net
-  local delay_message_emit = rong.conf.delay_message_emit
+  local conf = rong.conf
   local p = {}
   return {
     add = function (_, nid, n)
@@ -16,11 +16,11 @@ M.new = function (rong)
         pnid:kill()
       end
       p[nid] = sched.new_task(function()
-        sched.sleep(delay_message_emit)
+        sched.sleep(conf.delay_message_emit * math.random())
         local m = {}
         m[nid]=n
         local s = encode_f( {notifs=m} ) --FIXME tamaño!
-          log('RONG', 'DEBUG', 'Broadcasting notification %s: %i bytes', nid, #s)
+        log('RONG', 'DEBUG', 'Broadcasting notification %s: %i bytes', nid, #s)
         rong.net:broadcast( s )
       end)
     end,

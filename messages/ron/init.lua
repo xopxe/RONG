@@ -126,6 +126,9 @@ local apply_aging = function (rong)
 end
 
 local process_incoming_view = function (rong, view)
+  local now = sched.get_time()
+  local conf = rong.conf
+  
   --routing
   view_merge( rong, view.subs )
   
@@ -138,8 +141,9 @@ local process_incoming_view = function (rong, view)
   local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
   for mid, _ in pairs(matching) do
-    if not skipnotif[mid] then
-      inv[mid].meta.emited = inv[mid].meta.emited + 1 --FIXME do inside pending?
+    local m = inv[mid]
+    if now-m.meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
+      m.meta.emited = m.meta.emited + 1 --FIXME do inside pending?
       rong.pending:add(mid, inv[mid].data)
     end
   end
