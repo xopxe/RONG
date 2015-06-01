@@ -188,7 +188,8 @@ M.new = function(rong)
       ms = ms_candidate
     end
     
-    log('RON', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    --log('RON', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    log('RON', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
     rong.net:broadcast( ms )
   end
   

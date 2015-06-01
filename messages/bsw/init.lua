@@ -101,7 +101,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   log('BSW', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip), tostring(view.transfer_port))
   local skt, err = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
-    nil, nil, 'line', 'stream')
+    nil, nil, 'line', 'stream', 5)
   
   if not skt then 
     log('BSW', 'DEBUG', 'Sender failed to connect: %s', err)
@@ -125,7 +125,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
     log('BSW', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
-    skt:close() return;
+    skt:close(); return
   end
   
   -- read request

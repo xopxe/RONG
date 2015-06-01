@@ -96,7 +96,7 @@ sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
   log('TRW', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
   local skt, errconn = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
-    nil, nil, 'line', 'stream')
+    nil, nil, 'line', 'stream', 5)
   
   if not skt then 
     log('TRW', 'DEBUG', 'Sender failed to connect: %s', errconn)
