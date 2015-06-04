@@ -8,6 +8,9 @@ local messaging = require 'rong.lib.messaging'
 local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
 local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
+local queue_set = require "rong.lib.queue_set"
+local seen_notifs = queue_set.new()
+
 local view_merge = function(rong, vi)
   local now = sched.get_time()
   
@@ -30,12 +33,11 @@ local view_merge = function(rong, vi)
       view:add(sid, si.filter, false)
       sl = view[sid]
       local meta = sl.meta
-      meta.init_time = now
-      meta.emited = 0
       meta.seq = si.seq
       meta.visited = si.visited
       meta.visited[rong.conf.name] = true
     end
+    sl.meta.last_seen = now
   end
 end
 
@@ -66,7 +68,8 @@ local notifs_merge = function (rong, notifs)
 		end
 	end
 
-  for nid, data in pairs(notifs) do
+  for nid, inn in pairs(notifs) do
+    local data, path = inn.data, inn.path
 		local ni=inv[nid]
 		if ni then
       local meta = ni.meta
@@ -74,51 +77,63 @@ local notifs_merge = function (rong, notifs)
 			meta.seen=meta.seen+1
 			pending:del(nid) --if we were to emit this, don't.
 		else	
-      inv:add(nid, data, false)
-      rong.messages.init_notification(nid) --FIXME refactor?
-      local n = inv[nid]
-      n.meta.path=data._path
-      data._path = nil
-      
-      -- signal arrival of new notification to subscriptions
-      local matches=n.matches
-      for sid, s in pairs(rong.view.own) do
-        if matches[s] then
-          log('FLOP', 'DEBUG', 'Singalling arrived notification: %s to %s'
-            , tostring(nid), tostring(sid))
-          sched.signal(s, n)
+      if not seen_notifs:contains(nid) then
+        seen_notifs:pushright(nid)
+        while seen_notifs:len()>conf.max_notifid_tracked do
+	        seen_notifs:popleft()
+        end
+        
+        inv:add(nid, data, false)
+        rong.messages.init_notification(nid) --FIXME refactor?
+        local n = inv[nid]
+        n.meta.path=path
+        
+        -- signal arrival of new notification to subscriptions
+        local matches=n.matches
+        for sid, s in pairs(rong.view.own) do
+          if matches[s] then
+            log('FLOP', 'DEBUG', 'Singalling arrived notification: %s to %s'
+              , tostring(nid), tostring(sid))
+            sched.signal(s, n)
+          end
+        end
+        
+        --make sure table doesn't grow beyond inventory_size
+        while inv:len()>conf.inventory_size do
+          local mid=ranking_find_replaceable(rong)
+          inv:del(mid or nid)
+          log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
+            tostring(mid or nid), inv:len())
         end
       end
-      
-			--make sure table doesn't grow beyond inventory_size
-			while inv:len()>conf.inventory_size do
-				local mid=ranking_find_replaceable(rong)
-				inv:del(mid or nid)
-        log('FLOP', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
-          tostring(mid or nid), inv:len())
-			end
 		end
 	end
 
 end
 
 local process_incoming_view = function (rong, view)
+  local now = sched.get_time()
+  local conf = rong.conf
+  
   --routing
-  view_merge( rong, view )
+  view_merge( rong, view.subs )
   
   -- forwarding
-  local matching = messaging.select_matching( rong, view )
+  local skipnotif = {}
+  for _, nid in ipairs(view.skip or {}) do
+    skipnotif[nid]= true
+  end
+  
+  local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
   for mid, subs in pairs(matching) do
-    local data = inv[mid].data
     local path = {}
-    data._path = path
     for sid, s in pairs(subs) do
       for node, _ in pairs(s.meta.visited) do
-        path[node] = true
+        path[#path+1] = node
       end
     end    
-    rong.pending:add(mid, data)
+    pending:add(mid, {data=inv[mid].data, path=path})
   end
 end
 
@@ -137,20 +152,30 @@ M.new = function(rong)
     for k, v in pairs (rong.view.own) do
       v.meta.seq = v.meta.seq + 1
     end
-    local view_emit = {}
+    local subs = {}
     for sid, s in pairs (rong.view) do
       local meta = s.meta
-      meta.emited = meta.emited + 1
       local sr = {
         filter = s.filter,
         seq = meta.seq,
         visited =  meta.visited,
       }
-      view_emit[sid] = sr
+      subs[sid] = sr
     end
     
-    local ms = assert(encode_f({view=view_emit})) --FIXME tamaño!
-    log('FLOP', 'DEBUG', 'Broadcast view: %s', tostring(ms))
+    local ms = assert(encode_f({view={subs=subs}})) --FIXME tamaño!
+    
+    local ms_candidate
+    local skip = {}
+    for mid, _ in pairs(rong.inv) do
+      skip[#skip+1] = mid
+      ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
+      if #ms_candidate>1472 then break end
+      ms = ms_candidate
+    end
+    
+    --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
     rong.net:broadcast( ms )
   end
   
@@ -164,8 +189,8 @@ M.new = function(rong)
     local s = assert(rong.view[sid])
     local meta = s.meta
     meta.init_time = now
+    meta.last_seen = now
     meta.seq = 0
-    meta.emited = 0
     meta.visited = {}
   end
     

@@ -144,7 +144,7 @@ local process_incoming_view = function (rong, view)
     local m = inv[mid]
     if now-m.meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
       m.meta.emited = m.meta.emited + 1 --FIXME do inside pending?
-      rong.pending:add(mid, inv[mid].data)
+      pending:add(mid, inv[mid].data)
     end
   end
 end
@@ -188,7 +188,8 @@ M.new = function(rong)
       ms = ms_candidate
     end
     
-    log('RON', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    --log('RON', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    log('RON', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
     rong.net:broadcast( ms )
   end
   
