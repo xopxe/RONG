@@ -99,7 +99,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   log('EPIDEMIC', 'DEBUG', 'Sender connecting to: %s:%s', 
     tostring(view.transfer_ip),tostring(view.transfer_port))
   local skt, err = selector.new_tcp_client(view.transfer_ip,view.transfer_port,
-    nil, nil, 'line', 'stream')
+    nil, nil, 'line', 'stream', 5)
    
   if not skt then 
     log('EPIDEMIC', 'DEBUG', 'Sender failed to connect: %s', err)
@@ -120,8 +120,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local ok, errsend, length = skt:send_sync(svs..'\n')  
   if not ok then
     log('EPIDEMIC', 'DEBUG', 'Sender SV send failed: %s', tostring(errsend))
-    skt:close()
-    return;
+    skt:close(); return
   end
   
   -- read request
@@ -130,8 +129,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   log('EPIDEMIC', 'DEBUG', 'Sender REQ read finished: %s', tostring(reqs))
   if not reqs then
     log('EPIDEMIC', 'DEBUG', 'Sender REQ read failed: %s', tostring(errread))
-    skt:close()
-    return;
+    skt:close(); return
   end
   
   -- send requested data
@@ -164,19 +162,19 @@ end)
 local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
   return function(_, skt, err)
-    log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s', tostring(skt.stream))
+    log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s:%s', skt:getpeername())
     sched.run( function() -- removed, only single client
       skt.stream:set_timeout(5, 5)
       
       -- read summary vector
       local ssv, errread = skt.stream:read()
       if not ssv then
-        log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed: %s', tostring(errread))
+        log('EPIDEMIC', 'DEBUG', 'Receiver SV read failed (%s): %s', skt:getpeername(), tostring(errread))
          skt:close(); return
       end
       local sv, parserr = decode_f(ssv)
       if not sv then
-        log('EPIDEMIC', 'DEBUG', 'Parse SV failed: %s', tostring(parserr))
+        log('EPIDEMIC', 'DEBUG', 'Parse SV failed (%s): %s', skt:getpeername(), tostring(parserr))
          skt:close(); return
       end
       
@@ -189,17 +187,18 @@ local get_receive_transfer_handler = function (rong)
       end
       
       if #req == 0 then
-        log('EPIDEMIC', 'DEBUG', 'Receiver early close, nothing to request')
+        log('EPIDEMIC', 'DEBUG', 'Receiver early close, nothing to request (%s)', skt:getpeername())
         skt:close(); return
       end
       
       local sreq = assert(encode_f({req = req}))
       
-      log('EPIDEMIC', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes', 
-        #req, #sreq+1)  
+      log('EPIDEMIC', 'DEBUG', 'Receiver REQ built (%s): %i notifs, %i bytes', 
+        skt:getpeername(), #req, #sreq+1)  
       local ok, errsend, length = skt:send_sync(sreq..'\n')  
       if not ok then
-        log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed: %s', tostring(errsend))
+        log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed (%s): %s', 
+          skt:getpeername(), tostring(errsend))
         skt:close(); return
       end
       
@@ -212,10 +211,12 @@ local get_receive_transfer_handler = function (rong)
           if data then
             notif_merge(rong, data)
           else
-            log('EPIDEMIC', 'DEBUG', 'Parse DATA read failed: %s', tostring(decoderr))
+            log('EPIDEMIC', 'DEBUG', 'Parse DATA read failed (%s): %s',
+              skt:getpeername(), tostring(decoderr))
           end        
         elseif errdataread~='closed' then
-          log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed: %s', tostring(errdataread))
+          log('EPIDEMIC', 'DEBUG', 'Receiver DATA read failed (%s): %s', 
+            skt:getpeername(), tostring(errdataread))
         end
       until not sdata or not data
       
