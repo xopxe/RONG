@@ -10,7 +10,7 @@ local function not_on_path(rong)
 		if not own[m] then
       local meta = m.meta
 			if not meta.path[conf.name] then
-        nop[mid] = true
+        nop[mid] = m
 			end
 		end
 	end
@@ -29,9 +29,11 @@ function M.find_fifo_not_on_path (rong)
     
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
-		for mid, m in ipairs(nop) do
+		for mid, m in pairs(nop) do
       local meta = m.meta
-			local em=meta.init_time - meta.message._in_transit --estimated emission time
+      
+      local em = meta.init_time      
+      
 			if not inv.own[m]
 			and (not min_ts_mid or min_ts > em) 
 			and m.emited > conf.min_n_broadcasts then

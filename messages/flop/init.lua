@@ -36,6 +36,7 @@ local view_merge = function(rong, vi)
       meta.seq = si.seq
       meta.visited = si.visited
       meta.visited[rong.conf.name] = true
+      sl.meta.init_time = si.init_time
     end
     sl.meta.last_seen = now
   end
@@ -69,7 +70,9 @@ local notifs_merge = function (rong, notifs)
 	end
 
   for nid, inn in pairs(notifs) do
-    local data, path = inn.data, inn.path
+    local data, path = inn.data, {}
+    for _, n in ipairs(inn.path) do path[n]=true end
+    
 		local ni=inv[nid]
 		if ni then
       local meta = ni.meta
@@ -87,12 +90,13 @@ local notifs_merge = function (rong, notifs)
         rong.messages.init_notification(nid) --FIXME refactor?
         local n = inv[nid]
         n.meta.path=path
+        n.meta.init_time = inn.init_time
         
         -- signal arrival of new notification to subscriptions
         local matches=n.matches
         for sid, s in pairs(rong.view.own) do
           if matches[s] then
-            log('FLOP', 'DEBUG', 'Singalling arrived notification: %s to %s'
+            log('FLOP', 'DEBUG', 'Signalling arrived notification: %s to %s'
               , tostring(nid), tostring(sid))
             sched.signal(s, n)
           end
@@ -133,7 +137,11 @@ local process_incoming_view = function (rong, view)
         path[#path+1] = node
       end
     end    
-    pending:add(mid, {data=inv[mid].data, path=path})
+    local m = inv[mid]
+    if now-m.meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
+      m.meta.emited = m.meta.emited + 1 --FIXME do inside pending?
+      pending:add(mid, {data=m.data, path=path, init_time=m.meta.init_time})
+    end
   end
 end
 
@@ -159,6 +167,7 @@ M.new = function(rong)
         filter = s.filter,
         seq = meta.seq,
         visited =  meta.visited,
+        init_time = meta.init_time,
       }
       subs[sid] = sr
     end
@@ -189,6 +198,7 @@ M.new = function(rong)
     local s = assert(rong.view[sid])
     local meta = s.meta
     meta.init_time = now
+    meta.store_time=now
     meta.last_seen = now
     meta.seq = 0
     meta.visited = {}
@@ -199,6 +209,7 @@ M.new = function(rong)
     local n = assert(rong.inv[nid])
     local meta = n.meta
     meta.init_time=now
+    meta.store_time=now
     meta.last_seen=now
     meta.emited=0
     meta.seen=1

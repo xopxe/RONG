@@ -52,7 +52,7 @@ M.find_replaceable_homogeneous = function (rong) --FIXME
 		--classify in ranges
 		for _, mid in ipairs(worsts) do
 			local m = messages[mid]
-			local age=(now-m.meta.init_time) + m.message._in_transit --estimated emission time
+			local age=now-m.meta.init_time 
 			if age > ranking_window then return mid end
 			local range = math.floor(number_of_ranges * (age / ranking_window))+1
 			if range > number_of_ranges then range = number_of_ranges end 
@@ -179,8 +179,7 @@ M.find_replaceable_diversity_array = function (rong) --FIXME
 			if m.discard_sample then
 				diversity_array[#diversity_array + 1] = mid
 			end
-			--conf.log('$$$$', min_ts_mid, min_ts, m.meta.init_time, m.message._in_transit )
-			local em=m.meta.init_time - m.message._in_transit --estimated emission time
+			local em=m.meta.init_time 
 			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=-m.emited
 			--local em=m.message.notification_id
@@ -256,7 +255,7 @@ M.find_replaceable_variable_aging = function (rong) --FIXME
 				m.aging_slower = aging_hash(mid)
 			end
 
-			local em=(m.meta.init_time - m.message._in_transit * m.aging_slower) --estimated emission time
+			local em=m.meta.init_time
 
 			if not m.own 
 			and (not min_ts_mid or min_ts > em) 
@@ -294,7 +293,7 @@ M.find_replaceable_window = function (rong) --FIXME
 		local min_ts, min_ts_mid
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
-			local em=m.meta.init_time - m.message._in_transit --estimated emission time
+			local em=m.meta.init_time
 			if not m.message.own then
 				candidate_random[#candidate_random+1]=mid
 			end
@@ -341,9 +340,7 @@ function M.find_replaceable_fifo (rong)
 		for _, mid in ipairs(worsts) do
 			local m = inv[mid]
       local meta = m.meta
-			--conf.log('$$$$', min_ts_mid, min_ts, m.meta.init_time, m.message._in_transit )
 	
-      --local em=meta.init_time - meta.message._in_transit --estimated emission time
       local em = meta.init_time
       
 			--conf.log('looking for a replacement ---- ', mid, em)
