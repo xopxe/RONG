@@ -341,7 +341,7 @@ function M.find_replaceable_fifo (rong)
 			local m = inv[mid]
       local meta = m.meta
 	
-      local em = meta.init_time
+      local em = meta.store_time --meta.init_time      
       
 			--conf.log('looking for a replacement ---- ', mid, em)
 			--local em=m.message.notification_id

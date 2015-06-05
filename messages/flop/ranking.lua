@@ -32,7 +32,7 @@ function M.find_fifo_not_on_path (rong)
 		for mid, m in pairs(nop) do
       local meta = m.meta
       
-      local em = meta.init_time      
+      local em = meta.store_time --meta.init_time      
       
 			if not inv.own[m]
 			and (not min_ts_mid or min_ts > em) 
