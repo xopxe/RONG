@@ -80,8 +80,7 @@ local notifs_merge = function (rong, notifs)
         end
         
         inv:add(nid, data, false)
-        rong.messages.init_notification(nid) --FIXME refactor?
-        local n = inv[nid]
+        local n=rong.messages.init_notification(nid) --FIXME refactor?
         n.meta.init_time = inn.init_time
         
         -- signal arrival of new notification to subscriptions
@@ -221,6 +220,7 @@ M.new = function(rong)
     meta.last_seen=now
     meta.emited=0
     meta.seen=1
+    return n
   end
 
   return msg

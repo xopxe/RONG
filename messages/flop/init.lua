@@ -11,11 +11,11 @@ local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 local queue_set = require "rong.lib.queue_set"
 local seen_notifs = queue_set.new()
 
+local pairs, ipairs, tostring, assert = pairs, ipairs, tostring, assert
+
 local view_merge = function(rong, vi)
-  local now = sched.get_time()
-  
-  local view = rong.view
-  local conf = rong.conf
+  local now = sched.get_time()  
+  local conf, inv, view = rong.conf, rong.inv, rong.view
     
   for sid, si in pairs(vi) do
     log('FLOP', 'DEBUG', 'Merging subscription: %s', tostring(sid))
@@ -25,7 +25,23 @@ local view_merge = function(rong, vi)
       if meta.seq < si.seq then
         meta.seq = si.seq
         --FIXME??
-        meta.visited = si.visited
+        meta.visited = {}
+        for _, node in ipairs(si.visited) do meta.visited[node] = true end
+        
+        local matching = messaging.select_matching( rong, {sid, sl} )
+        for mid, subs in pairs(matching) do
+          if inv.own[mid] then 
+            local path = {}
+            inv[mid].meta.path = path
+            --local path = inv[mid].meta.path
+            for sid, s in pairs(subs) do
+              for node, _ in pairs(meta.visited) do
+                path[node] = true
+              end
+            end
+          end
+        end
+        
         meta.visited[rong.conf.name] = true
         --/FIXME??
       end  
@@ -69,15 +85,13 @@ local notifs_merge = function (rong, notifs)
 		end
 	end
 
-  for nid, inn in pairs(notifs) do
-    local data, path = inn.data, {}
-    for _, n in ipairs(inn.path) do path[n]=true end
-    
+  for nid, inn in pairs(notifs) do  
 		local ni=inv[nid]
 		if ni then
       local meta = ni.meta
 			meta.last_seen = now
 			meta.seen=meta.seen+1
+      for _, n in ipairs(inn.path) do meta.path[n]=true end
 			pending:del(nid) --if we were to emit this, don't.
 		else	
       if not seen_notifs:contains(nid) then
@@ -86,11 +100,11 @@ local notifs_merge = function (rong, notifs)
 	        seen_notifs:popleft()
         end
         
-        inv:add(nid, data, false)
-        rong.messages.init_notification(nid) --FIXME refactor?
-        local n = inv[nid]
-        n.meta.path=path
-        n.meta.init_time = inn.init_time
+        inv:add(nid, inn.data, false)
+        local n = rong.messages.init_notification(nid) --FIXME refactor?
+        local meta = n.meta
+        meta.init_time = inn.init_time
+        for _, n in ipairs(inn.path) do meta.path[n]=true end
         
         -- signal arrival of new notification to subscriptions
         local matches=n.matches
@@ -106,7 +120,7 @@ local notifs_merge = function (rong, notifs)
         while inv:len()>conf.inventory_size do
           local mid=ranking_find_replaceable(rong)
           inv:del(mid or nid)
-          log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
+          log('FLOP', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
             tostring(mid or nid), inv:len())
         end
       end
@@ -131,16 +145,13 @@ local process_incoming_view = function (rong, view)
   local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
   for mid, subs in pairs(matching) do
-    local path = {}
-    for sid, s in pairs(subs) do
-      for node, _ in pairs(s.meta.visited) do
-        path[#path+1] = node
-      end
-    end    
     local m = inv[mid]
-    if now-m.meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
-      m.meta.emited = m.meta.emited + 1 --FIXME do inside pending?
-      pending:add(mid, {data=m.data, path=path, init_time=m.meta.init_time})
+    local meta = m.meta
+    local outpath = {}
+    for node, _ in pairs (meta.path) do outpath[#outpath+1]=node end
+    if now-meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
+      meta.emited = meta.emited + 1 --FIXME do inside pending?
+      pending:add(mid, {data=m.data, path=outpath, init_time=meta.init_time})
     end
   end
 end
@@ -163,10 +174,12 @@ M.new = function(rong)
     local subs = {}
     for sid, s in pairs (rong.view) do
       local meta = s.meta
+      local outvisited = {}
+      for node, _ in pairs(meta.visited) do outvisited[#outvisited+1] = node end
       local sr = {
         filter = s.filter,
         seq = meta.seq,
-        visited =  meta.visited,
+        visited = outvisited,
         init_time = meta.init_time,
       }
       subs[sid] = sr
@@ -183,8 +196,8 @@ M.new = function(rong)
       ms = ms_candidate
     end
     
-    --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
-    log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
+    log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    --log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
     rong.net:broadcast( ms )
   end
   
@@ -202,6 +215,7 @@ M.new = function(rong)
     meta.last_seen = now
     meta.seq = 0
     meta.visited = {}
+    return s
   end
     
   msg.init_notification = function (nid)
@@ -213,6 +227,8 @@ M.new = function(rong)
     meta.last_seen=now
     meta.emited=0
     meta.seen=1
+    meta.path={}
+    return n
   end
 
   return msg

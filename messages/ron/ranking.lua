@@ -347,7 +347,7 @@ function M.find_replaceable_fifo (rong)
 			--local em=m.message.notification_id
 			if not inv.own[m]
 			and (not min_ts_mid or min_ts > em) 
-			and m.meta.emited > conf.min_n_broadcasts then
+			and meta.emited > conf.min_n_broadcasts then
 				min_ts_mid, min_ts = mid, em
 			end
 		end
