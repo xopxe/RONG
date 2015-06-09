@@ -23,22 +23,45 @@ local view_merge = function(rong, vi)
     if sl then
       local meta = sl.meta
       if meta.seq < si.seq then
+        log('FLOP', 'DEBUG', 'Updating subscription: %s seq %i-\>%i', tostring(sid), meta.seq, si.seq)
         meta.seq = si.seq
         --FIXME??
         meta.visited = {}
-        for _, node in ipairs(si.visited) do meta.visited[node] = true end
+        for _, node in ipairs(si.visited) do
+          log('FLOP', 'DEBUG', 'Updating subscription: visited %s', tostring(node))
+          meta.visited[node] = true 
+        end
         
-        local matching = messaging.select_matching( rong, {sid, sl} )
-        for mid, subs in pairs(matching) do
+        local matching = messaging.select_matching( rong, {[sid]=sl} )
+        for mid, _ in pairs(matching) do
+          log('FLOP', 'DEBUG', 'Updating subscription: matching %s (own=%s)', tostring(mid), tostring(not not inv.own[mid]))
           if inv.own[mid] then 
+            
             local path = {}
-            inv[mid].meta.path = path
+            --[[
             --local path = inv[mid].meta.path
             for sid, s in pairs(subs) do
               for node, _ in pairs(meta.visited) do
                 path[node] = true
               end
             end
+            --]]
+            --FIXME
+            local metaq = assert(meta.q)
+            for node, _ in pairs(meta.visited) do
+              local qold = metaq[node] or 0.5    
+              metaq[node] = qold + (1-qold)*0.3
+            end
+            
+            local sortq = {}
+            for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end 
+            for node, q in pairs(metaq) do sortq[#sortq+1] = node end 
+            log('FLOP', 'DEBUG', 'Updating subscription: sortq [%s]', table.concat(sortq,' '))
+            table.sort(sortq, function(a,b) return metaq[a]>metaq[b] end)
+            local max = 10 --FIXME
+            if #sortq<max then max=#sortq end
+            for i=1, max do path[sortq[i]] = true end
+            inv[mid].meta.path = path
           end
         end
         
@@ -50,9 +73,30 @@ local view_merge = function(rong, vi)
       sl = view[sid]
       local meta = sl.meta
       meta.seq = si.seq
-      meta.visited = si.visited
+      meta.visited = {}
+      meta.q = {} --FIXME
+      for _, node in ipairs(si.visited) do
+        meta.visited[node] = true 
+        meta.q[node] = 0.5
+      end
       meta.visited[rong.conf.name] = true
       sl.meta.init_time = si.init_time
+      sl.meta.store_time = now
+      sl.meta.last_seen = now
+      local matching = messaging.select_matching( rong, {[sid]=sl} )
+      for mid, _ in pairs(matching) do
+        if inv.own[mid] then 
+          local path = {}
+          local sortq = {}
+          for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end
+          for node, q in pairs(meta.q) do sortq[#sortq+1] = node end 
+          table.sort(sortq, function(a,b) return meta.q[a]>meta.q[b] end)
+          local max = 10 --FIXME
+          if #sortq<max then max=#sortq end
+          for i=1, max do path[sortq[i]] = true end
+          inv[mid].meta.path = path
+        end
+      end
     end
     sl.meta.last_seen = now
   end
@@ -160,6 +204,20 @@ local process_incoming_notifs = function (rong, notifs)
   notifs_merge(rong, notifs)
 end
 
+local apply_aging = function (rong)
+  local now = sched.get_time()
+  local conf = rong.conf
+  
+  for sid, s in pairs(rong.view) do
+    local meta = assert(s.meta)
+    local q = assert(meta.q)
+    for node, oldq in pairs(q) do
+      q[node]=oldq * 0.9999^(now-meta.last_seen)    --FIXME
+      meta.last_seen=now
+    end
+  end
+end
+
 M.new = function(rong)  
   local msg = {}
   
@@ -168,6 +226,7 @@ M.new = function(rong)
   rong.ranking_find_replaceable = (require 'rong.messages.flop.ranking')[ranking_method]
   
   msg.broadcast_view = function ()
+    apply_aging(rong)
     for k, v in pairs (rong.view.own) do
       v.meta.seq = v.meta.seq + 1
     end
@@ -196,8 +255,8 @@ M.new = function(rong)
       ms = ms_candidate
     end
     
-    log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
-    --log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
+    --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+    log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
     rong.net:broadcast( ms )
   end
   
@@ -211,10 +270,11 @@ M.new = function(rong)
     local s = assert(rong.view[sid])
     local meta = s.meta
     meta.init_time = now
-    meta.store_time=now
+    meta.store_time = now
     meta.last_seen = now
     meta.seq = 0
     meta.visited = {}
+    meta.q={}
     return s
   end
     

@@ -6,8 +6,7 @@ local sched = require 'lumen.sched'
 --selects messages matching a set of subscriptions
 --parameter should be set of subscription ids.
 M.select_matching = function (rong, vs)
-  local inv, view  = rong.inv, rong.view
-  local conf = rong.conf
+  local inv, view, conf  = rong.inv, rong.view, rong.conf
   --local pending = rong.pending
 
   local ret = {}

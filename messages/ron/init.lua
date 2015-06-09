@@ -32,6 +32,8 @@ local view_merge = function(rong, vi)
       sl = view[sid]
       sl.meta.p = si.p --TODO how to initialize p from incomming?
       sl.meta.init_time = si.init_time
+      sl.meta.store_time = now
+      sl.meta.last_seen = now
     end
     sl.meta.last_seen = now
   end
