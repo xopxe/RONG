@@ -5,8 +5,6 @@ local M = {}
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
 local messaging = require 'rong.lib.messaging'
-local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
-local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
 local queue_set = require "rong.lib.queue_set"
 local seen_notifs = queue_set.new()
@@ -34,31 +32,22 @@ local view_merge = function(rong, vi)
         
         local matching = messaging.select_matching( rong, {[sid]=sl} )
         for mid, _ in pairs(matching) do
-          log('FLOP', 'DEBUG', 'Updating subscription: matching %s (own=%s)', tostring(mid), tostring(not not inv.own[mid]))
+          --log('FLOP', 'DEBUG', 'Updating subscription: matching %s (own=%s)', tostring(mid), tostring(not not inv.own[mid]))
           if inv.own[mid] then 
-            
             local path = {}
-            --[[
-            --local path = inv[mid].meta.path
-            for sid, s in pairs(subs) do
-              for node, _ in pairs(meta.visited) do
-                path[node] = true
-              end
-            end
-            --]]
             --FIXME
             local metaq = assert(meta.q)
             for node, _ in pairs(meta.visited) do
               local qold = metaq[node] or 0.5    
-              metaq[node] = qold + (1-qold)*0.3
+              metaq[node] = qold + (1-qold)*conf.q_reinf
             end
             
             local sortq = {}
             for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end 
             for node, q in pairs(metaq) do sortq[#sortq+1] = node end 
-            log('FLOP', 'DEBUG', 'Updating subscription: sortq [%s]', table.concat(sortq,' '))
             table.sort(sortq, function(a,b) return metaq[a]>metaq[b] end)
-            local max = 10 --FIXME
+            log('FLOP', 'DEBUG', 'Updating subscription: sortq [%s]', table.concat(sortq,' '))
+            local max = conf.max_path_count
             if #sortq<max then max=#sortq end
             for i=1, max do path[sortq[i]] = true end
             inv[mid].meta.path = path
@@ -91,7 +80,7 @@ local view_merge = function(rong, vi)
           for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end
           for node, q in pairs(meta.q) do sortq[#sortq+1] = node end 
           table.sort(sortq, function(a,b) return meta.q[a]>meta.q[b] end)
-          local max = 10 --FIXME
+          local max = conf.max_path_count
           if #sortq<max then max=#sortq end
           for i=1, max do path[sortq[i]] = true end
           inv[mid].meta.path = path
@@ -212,7 +201,7 @@ local apply_aging = function (rong)
     local meta = assert(s.meta)
     local q = assert(meta.q)
     for node, oldq in pairs(q) do
-      q[node]=oldq * 0.9999^(now-meta.last_seen)    --FIXME
+      q[node]=oldq * conf.q_decay^(now-meta.last_seen)
       meta.last_seen=now
     end
   end
@@ -220,6 +209,8 @@ end
 
 M.new = function(rong)  
   local msg = {}
+  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
+
   
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_fifo_not_on_path'
@@ -246,13 +237,15 @@ M.new = function(rong)
     
     local ms = assert(encode_f({view={subs=subs}})) --FIXME tamaño!
     
-    local ms_candidate
-    local skip = {}
-    for mid, _ in pairs(rong.inv) do
-      skip[#skip+1] = mid
-      ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
-      if #ms_candidate>1472 then break end
-      ms = ms_candidate
+    if rong.conf.view_skip_list then
+      local ms_candidate
+      local skip = {}
+      for mid, _ in pairs(rong.inv) do
+        skip[#skip+1] = mid
+        ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
+        if #ms_candidate>1472 then break end
+        ms = ms_candidate
+      end
     end
     
     --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)

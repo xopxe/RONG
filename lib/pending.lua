@@ -2,12 +2,12 @@ local M = {}
 
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
-local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
-local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
 M.new = function (rong)
   local net = rong.net
   local conf = rong.conf
+  local encode_f, decode_f = conf.encode_f, conf.decode_f
+  
   local p = {}
   return {
     add = function (_, nid, n)

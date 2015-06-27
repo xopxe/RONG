@@ -5,8 +5,6 @@ local M = {}
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
 local messaging = require 'rong.lib.messaging'
-local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
-local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 
 local queue_set = require "rong.lib.queue_set"
 local seen_notifs = queue_set.new()
@@ -159,6 +157,7 @@ end
 
 M.new = function(rong)  
   local msg = {}
+  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_replaceable_fifo'

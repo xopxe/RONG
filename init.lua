@@ -4,16 +4,18 @@ local selector = require 'lumen.tasks.selector'
 local sched = require 'lumen.sched'
 local log = require 'lumen.log'
 
-local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
-local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
-
-
 local function script_path()
    local str = debug.getinfo(2, "S").source:sub(2)
    return str:match("(.*/)")
 end
 
 M.new = function(conf)  
+  local encoder_lib = require( conf.encoder or 'lumen.lib.dkjson')
+  conf.encode_f = conf.encode_f or encoder_lib.encode
+  conf.decode_f = conf.decode_f or encoder_lib.decode
+  local encode_f = conf.encode_f
+  local decode_f = conf.decode_f
+
   local ivs = assert(loadfile (script_path()..'lib/inventory_view_sets.lua'))()
 
   --M.conf = conf
@@ -31,7 +33,7 @@ M.new = function(conf)
   local incomming_handler = function (data, err)
     if data then 
       --log('RONG', 'DEBUG', 'Incomming: %s', tostring(data))
-      local m = decode_f(data)
+      local m = assert(decode_f(data))
       for k, v in pairs(m) do
         if messages.incomming[k] then 
           --log('RONG', 'DEBUG', ' Incomming found: %s', tostring(k))

@@ -5,8 +5,6 @@ local M = {}
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
 local messaging = require 'rong.lib.messaging'
-local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
-local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 local selector = require 'lumen.tasks.selector'
 
 local EVENT_TRIGGER_EXCHANGE = {}
@@ -91,6 +89,7 @@ end
 --in a task to insure atomicity
 sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local inv = rong.inv
+  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   
   if inv:len()==0 then
     log('BSW', 'DEBUG', 'Sender not connecting, nothing to offer')
@@ -196,6 +195,7 @@ end)
 -- Get handler for reading a transfer from socket
 local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
+  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   return function(_, skt, err)
     if skt==nil then
       log('BSW', 'ERROR', 'Socket error: %s', tostring(err))

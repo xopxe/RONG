@@ -5,8 +5,6 @@ local M = {}
 local log = require 'lumen.log'
 local sched = require 'lumen.sched'
 local messaging = require 'rong.lib.messaging'
-local encoder_lib = require 'lumen.lib.dkjson' --'lumen.lib.bencode'
-local encode_f, decode_f = encoder_lib.encode, encoder_lib.decode
 local selector = require 'lumen.tasks.selector'
 
 local EVENT_TRANSMIT_TOKEN = {}
@@ -91,6 +89,7 @@ end
 --in a task to insure atomicity
 sched.sigrun ( {EVENT_TRANSMIT_TOKEN}, function (_, rong, view)
   local inv = rong.inv
+  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   
   -- Open connection
   log('TRW', 'DEBUG', 'Sender connecting to: %s:%s', 
@@ -154,6 +153,7 @@ end)
 local get_receive_token_handler = function (rong)
   return function(_, sktd, err)
     assert(sktd, err)
+    local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
     if rong.token and rong.token  then
       log('TRW', 'DEBUG', 'Already got a token, refusing client: %s:%s', sktd:getpeername())
       sktd:close()
