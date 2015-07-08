@@ -18,76 +18,55 @@ local view_merge = function(rong, vi)
   for sid, si in pairs(vi) do
     log('FLOP', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local sl = view[sid]
-    if sl then
-      local meta = sl.meta
-      if meta.seq < si.seq then
-        log('FLOP', 'DEBUG', 'Updating subscription: %s seq %i-\>%i', tostring(sid), meta.seq, si.seq)
-        meta.seq = si.seq
-        --FIXME??
-        meta.visited = {}
-        for _, node in ipairs(si.visited) do
-          log('FLOP', 'DEBUG', 'Updating subscription: visited %s', tostring(node))
-          meta.visited[node] = true 
-        end
+    local meta
+    if not sl then
+      view:add(sid, si.filter, false)
+      sl = view[sid]
+      meta = sl.meta
+      meta.q = {}
+      meta.init_time = si.init_time
+      meta.store_time = now
+    end
+    meta = sl.meta
+       
+    if not meta.seq or meta.seq < si.seq then
+      log('FLOP', 'DEBUG', 'Updating sub %s: seq %s-\>%i', tostring(sid), tostring(meta.seq), si.seq)
+      meta.seq = si.seq
+      meta.visited = {[rong.conf.name] = true}
+      meta.last_seen = now
         
-        local matching = messaging.select_matching( rong, {[sid]=sl} )
-        for mid, _ in pairs(matching) do
-          --log('FLOP', 'DEBUG', 'Updating subscription: matching %s (own=%s)', tostring(mid), tostring(not not inv.own[mid]))
-          if inv.own[mid] then 
-            local path = {}
-            --FIXME
-            local metaq = assert(meta.q)
-            for node, _ in pairs(meta.visited) do
+      for _, node in ipairs(si.visited) do
+        log('FLOP', 'DEBUG', 'Updating sub %s: visited %s', tostring(sid), tostring(node))
+        meta.visited[node] = true
+        meta.q[node] = meta.q[node] or 0.5
+      end
+        
+      local matching = messaging.select_matching( rong, {[sid]=sl} )
+      for mid, _ in pairs(matching) do
+        if inv.own[mid] then -- solo para own?????? FIXME
+          local path = {}
+          local metaq = assert(meta.q)
+          for node, _ in pairs(meta.visited) do
+            if node ~= rong.conf.name then 
               local qold = metaq[node] or 0.5    
               metaq[node] = qold + (1-qold)*conf.q_reinf
             end
-            
-            local sortq = {}
-            for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end 
-            for node, q in pairs(metaq) do sortq[#sortq+1] = node end 
-            table.sort(sortq, function(a,b) return metaq[a]>metaq[b] end)
-            log('FLOP', 'DEBUG', 'Updating subscription: sortq [%s]', table.concat(sortq,' '))
-            local max = conf.max_path_count
-            if #sortq<max then max=#sortq end
-            for i=1, max do path[sortq[i]] = true end
-            inv[mid].meta.path = path
           end
-        end
-        
-        meta.visited[rong.conf.name] = true
-        --/FIXME??
-      end  
-    else
-      view:add(sid, si.filter, false)
-      sl = view[sid]
-      local meta = sl.meta
-      meta.seq = si.seq
-      meta.visited = {}
-      meta.q = {} --FIXME
-      for _, node in ipairs(si.visited) do
-        meta.visited[node] = true 
-        meta.q[node] = 0.5
-      end
-      meta.visited[rong.conf.name] = true
-      sl.meta.init_time = si.init_time
-      sl.meta.store_time = now
-      sl.meta.last_seen = now
-      local matching = messaging.select_matching( rong, {[sid]=sl} )
-      for mid, _ in pairs(matching) do
-        if inv.own[mid] then 
-          local path = {}
+          
           local sortq = {}
-          for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end
-          for node, q in pairs(meta.q) do sortq[#sortq+1] = node end 
-          table.sort(sortq, function(a,b) return meta.q[a]>meta.q[b] end)
+          for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end 
+          for node, q in pairs(metaq) do 
+            if not inv[mid].meta.path[node] then sortq[#sortq+1] = node end 
+          end 
+          table.sort(sortq, function(a,b) return metaq[a]>metaq[b] end)
+          log('FLOP', 'DEBUG', 'Updating subs %s for %s: sortq [%s]', sid, mid, table.concat(sortq,' '))
           local max = conf.max_path_count
-          if #sortq<max then max=#sortq end
+          if max>#sortq then max=#sortq end
           for i=1, max do path[sortq[i]] = true end
           inv[mid].meta.path = path
         end
       end
     end
-    sl.meta.last_seen = now
   end
 end
 
@@ -184,7 +163,12 @@ local process_incoming_view = function (rong, view)
     for node, _ in pairs (meta.path) do outpath[#outpath+1]=node end
     if now-meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
       meta.emited = meta.emited + 1 --FIXME do inside pending?
-      pending:add(mid, {data=m.data, path=outpath, init_time=meta.init_time})
+      pending:add(mid, {
+        data=m.data, 
+        path=outpath, 
+        emitter=rong.conf.name, 
+        init_time=meta.init_time,
+      })
     end
   end
 end
@@ -202,8 +186,8 @@ local apply_aging = function (rong)
     local q = assert(meta.q)
     for node, oldq in pairs(q) do
       q[node]=oldq * conf.q_decay^(now-meta.last_seen)
-      meta.last_seen=now
     end
+    meta.last_seen=now
   end
 end
 
@@ -211,10 +195,9 @@ M.new = function(rong)
   local msg = {}
   local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
 
-  
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_fifo_not_on_path'
-  rong.ranking_find_replaceable = (require 'rong.messages.flop.ranking')[ranking_method]
+  rong.ranking_find_replaceable = assert((require 'rong.messages.flop.ranking')[ranking_method])
   
   msg.broadcast_view = function ()
     apply_aging(rong)
