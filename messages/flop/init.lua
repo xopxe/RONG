@@ -14,7 +14,7 @@ local pairs, ipairs, tostring, assert = pairs, ipairs, tostring, assert
 local view_merge = function(rong, vi)
   local now = sched.get_time()  
   local conf, inv, view = rong.conf, rong.inv, rong.view
-    
+
   for sid, si in pairs(vi) do
     log('FLOP', 'DEBUG', 'Merging subscription: %s', tostring(sid))
     local sl = view[sid]
@@ -28,19 +28,19 @@ local view_merge = function(rong, vi)
       meta.store_time = now
     end
     meta = sl.meta
-       
+
     if not meta.seq or meta.seq < si.seq then
       log('FLOP', 'DEBUG', 'Updating sub %s: seq %s-\>%i', tostring(sid), tostring(meta.seq), si.seq)
       meta.seq = si.seq
       meta.visited = {[rong.conf.name] = true}
       meta.last_seen = now
-        
+
       for _, node in ipairs(si.visited) do
         log('FLOP', 'DEBUG', 'Updating sub %s: visited %s', tostring(sid), tostring(node))
         meta.visited[node] = true
         meta.q[node] = meta.q[node] or 0.5
       end
-        
+
       local matching = messaging.select_matching( rong, {[sid]=sl} )
       for mid, _ in pairs(matching) do
         if inv.own[mid] then -- solo para own?????? FIXME
@@ -52,7 +52,7 @@ local view_merge = function(rong, vi)
               metaq[node] = qold + (1-qold)*conf.q_reinf
             end
           end
-          
+
           local sortq = {}
           for node, _ in pairs(inv[mid].meta.path) do sortq[#sortq+1] = node end 
           for node, q in pairs(metaq) do 
@@ -75,49 +75,49 @@ local notifs_merge = function (rong, notifs)
   local conf = rong.conf
   local pending = rong.pending
   local ranking_find_replaceable = rong.ranking_find_replaceable
-  
+
   local now=sched.get_time()
-  
+
   --messages maintenance 
-	for nid, n in pairs(inv) do
+  for nid, n in pairs(inv) do
     local meta = n.meta
-		if inv.own[nid] then
-			if now - meta.init_time > conf.max_owning_time then
+    if inv.own[nid] then
+      if now - meta.init_time > conf.max_owning_time then
         log('FLOP', 'DEBUG', 'Purging old own notif: %s', tostring(nid))
-				inv:del(nid)
-			elseif meta.emited >= conf.max_ownnotif_transmits then
+        inv:del(nid)
+      elseif meta.emited >= conf.max_ownnotif_transmits then
         log('FLOP', 'DEBUG', 'Purging own notif on transmit count: %s', tostring(nid))
-				inv:del(nid)
-			end
-		else
-			if meta.emited >= conf.max_notif_transmits then
+        inv:del(nid)
+      end
+    else
+      if meta.emited >= conf.max_notif_transmits then
         log('FLOP', 'DEBUG', 'Purging notif on transmit count: %s', tostring(nid))
-				inv:del(nid)
-			end
-		end
-	end
+        inv:del(nid)
+      end
+    end
+  end
 
   for nid, inn in pairs(notifs) do  
-		local ni=inv[nid]
-		if ni then
+    local ni=inv[nid]
+    if ni then
       local meta = ni.meta
-			meta.last_seen = now
-			meta.seen=meta.seen+1
+      meta.last_seen = now
+      meta.seen=meta.seen+1
       for _, n in ipairs(inn.path) do meta.path[n]=true end
-			pending:del(nid) --if we were to emit this, don't.
-		else	
+      pending:del(nid) --if we were to emit this, don't.
+    else	
       if not seen_notifs:contains(nid) then
         seen_notifs:pushright(nid)
         while seen_notifs:len()>conf.max_notifid_tracked do
-	        seen_notifs:popleft()
+          seen_notifs:popleft()
         end
-        
+
         inv:add(nid, inn.data, false)
         local n = rong.messages.init_notification(nid) --FIXME refactor?
         local meta = n.meta
         meta.init_time = inn.init_time
         for _, n in ipairs(inn.path) do meta.path[n]=true end
-        
+
         -- signal arrival of new notification to subscriptions
         local matches=n.matches
         for sid, s in pairs(rong.view.own) do
@@ -127,7 +127,7 @@ local notifs_merge = function (rong, notifs)
             sched.signal(s, n)
           end
         end
-        
+
         --make sure table doesn't grow beyond inventory_size
         while inv:len()>conf.inventory_size do
           local mid=ranking_find_replaceable(rong)
@@ -136,24 +136,24 @@ local notifs_merge = function (rong, notifs)
             tostring(mid or nid), inv:len())
         end
       end
-		end
-	end
+    end
+  end
 
 end
 
 local process_incoming_view = function (rong, view)
   local now = sched.get_time()
   local conf = rong.conf
-  
+
   --routing
   view_merge( rong, view.subs )
-  
+
   -- forwarding
   local skipnotif = {}
   for _, nid in ipairs(view.skip or {}) do
     skipnotif[nid]= true
   end
-  
+
   local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
   for mid, subs in pairs(matching) do
@@ -180,7 +180,7 @@ end
 local apply_aging = function (rong)
   local now = sched.get_time()
   local conf = rong.conf
-  
+
   for sid, s in pairs(rong.view) do
     local meta = assert(s.meta)
     local q = assert(meta.q)
@@ -198,7 +198,7 @@ M.new = function(rong)
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_fifo_not_on_path'
   rong.ranking_find_replaceable = assert((require 'rong.messages.flop.ranking')[ranking_method])
-  
+
   msg.broadcast_view = function ()
     apply_aging(rong)
     for k, v in pairs (rong.view.own) do
@@ -217,9 +217,9 @@ M.new = function(rong)
       }
       subs[sid] = sr
     end
-    
+
     local ms = assert(encode_f({view={subs=subs}})) --FIXME tamaño!
-    
+
     if rong.conf.view_skip_list then
       local ms_candidate
       local skip = {}
@@ -230,17 +230,17 @@ M.new = function(rong)
         ms = ms_candidate
       end
     end
-    
+
     --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
     log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
     rong.net:broadcast( ms )
   end
-  
+
   msg.incomming = {
     view = process_incoming_view,
     notifs = process_incoming_notifs
   }
-  
+
   msg.init_subscription = function (sid)
     local now = sched.get_time()
     local s = assert(rong.view[sid])
@@ -253,7 +253,7 @@ M.new = function(rong)
     meta.q={}
     return s
   end
-    
+
   msg.init_notification = function (nid)
     local now = sched.get_time()
     local n = assert(rong.inv[nid])
