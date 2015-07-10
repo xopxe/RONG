@@ -31,13 +31,9 @@ local function make_MessageTable ()
 				setmetatable(matches, {__mode='k'})
 				inv[key].matches=matches
 				for sid, s in pairs(view) do
-          local satisf = satisfies(data, s.filter)
+          matches[s] = satisfies(data, s.filter) --or nil
           log('RONG', 'DEBUG', 'Notification %s satisfies Subscription %s: %s',
-            key, sid, tostring(satisf))
-					if satisf then
-						--print ('M', key, sid, '+')
-						matches[s] = true
-					end 
+            key, sid, tostring(matches[s]))
 				end
 			end,
 			del=function(self, key)
@@ -79,12 +75,21 @@ local function make_SubscriptionTable ()
         
 				--update matching cache table in messages
 				for mid,m in pairs(inv) do
-					if satisfies(m.data, filter) then
-						inv[mid].matches[entry]=true
-					end
+          m.matches[entry] = satisfies(m.data, filter) --or nil
 				end
+        return entry
  			end,
-    
+      
+      update=function(self, key, filter)
+        local entry = assert(rawget(self, key))
+        entry.filter=filter
+				--update matching cache table in messages
+				for mid,m in pairs(inv) do
+          m.matches[entry] = satisfies(m.data, filter) --or nil
+				end
+        return entry
+      end,
+      
       del=function(self, key)
 				if rawget(self, key) then
 					n = n - 1

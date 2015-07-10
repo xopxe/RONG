@@ -90,6 +90,15 @@ M.new = function(conf)
     return rong.view[sid]
   end
   
+  M.update_subscription = function (rong, sid, filter)
+    if not sid then return nil, 'Missing sid for update' end
+    log('RONG', 'INFO', 'Updating subscription: "%s"',
+      tostring(sid))
+    rong.view:update(sid, filter, true)
+    --messages.init_subscription(sid)
+    return rong.view[sid]
+  end
+  
   M.notificate = function (rong, nid, n)
     nid = nid or 'nid:'..math.random(2^31)
     log('RONG', 'INFO', 'Publishing notification: "%s"',
