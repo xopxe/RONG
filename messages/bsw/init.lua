@@ -139,7 +139,7 @@ sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   -- send requested data
   local served_notif = {}
   local matching = messaging.select_matching( rong, view.subs )
-  for mid, _ in pairs(matching) do
+  for _, mid in ipairs(matching) do
     local m = inv[mid]
     local out = {}
     out[mid] = {

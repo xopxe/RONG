@@ -142,7 +142,7 @@ local process_incoming_view = function (rong, view)
   
   local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
-  for mid, _ in pairs(matching) do
+  for _, mid in ipairs(matching) do
     local m = inv[mid]
     if now-m.meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
       m.meta.emited = m.meta.emited + 1 --FIXME do inside pending?

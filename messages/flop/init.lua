@@ -63,7 +63,7 @@ local view_merge = function(rong, vi)
         end
         
         local matching = messaging.select_matching( rong, {[sid]=sl} )
-        for mid, _ in pairs(matching) do
+        for _, mid in ipairs(matching) do
           if inv.own[mid] then -- solo para own?????? FIXME
             local path = {}
             local metaq = assert(meta.q)
@@ -187,7 +187,10 @@ local process_incoming_view = function (rong, view)
 
   local matching = messaging.select_matching( rong, view.subs )
   local pending, inv = rong.pending, rong.inv
-  for mid, subs in pairs(matching) do
+  table.sort(matching, function(ma, mb)
+      return inv[ma].meta.init_time < inv[mb].meta.init_time
+  end)
+  for _, mid in ipairs(matching) do
     log('FLOP', 'DEBUG', 'Icomming view, found matching %s', tostring(mid))
     local m = inv[mid]
     local meta = m.meta

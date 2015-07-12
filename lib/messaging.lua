@@ -21,8 +21,11 @@ M.select_matching = function (rong, vs)
         if now-m.meta.last_seen > (conf.delay_message_emit or 0) then
           --ret[mid] = m
           --pending:add(mid, m.data)
-          ret[mid] = ret[mid] or {}
-          ret[mid][sid] = s
+          --ret[mid] = ret[mid] or {}
+          --ret[mid][sid] = s
+          
+          if not ret[mid] then ret[#ret+1]=mid end
+          ret[mid]=true
 				end
 			end
 		end
