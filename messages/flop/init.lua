@@ -133,6 +133,7 @@ local notifs_merge = function (rong, notifs)
       local meta = ni.meta
       meta.last_seen = now
       meta.seen=meta.seen+1
+      meta.seen_on[inn.emmiter]=true
       for _, n in ipairs(inn.path) do meta.path[n]=true end
       pending:del(nid) --if we were to emit this, don't.
     else	
@@ -146,6 +147,7 @@ local notifs_merge = function (rong, notifs)
         local n = rong.messages.init_notification(nid) --FIXME refactor?
         local meta = n.meta
         meta.init_time = inn.init_time
+        meta.seen_on[inn.emmiter]=true
         for _, n in ipairs(inn.path) do meta.path[n]=true end
 
         -- signal arrival of new notification to subscriptions
@@ -175,6 +177,7 @@ local process_incoming_view = function (rong, view)
   local now = sched.get_time()
   local conf = rong.conf
   local my_node = rong.conf.name
+  local attach = conf.attachments or {}
 
   --routing
   view_merge( rong, view.subs )
@@ -194,20 +197,25 @@ local process_incoming_view = function (rong, view)
     log('FLOP', 'DEBUG', 'Icomming view, found matching %s', tostring(mid))
     local m = inv[mid]
     local meta = m.meta
-    local outpath = {}
-    for node, _ in pairs (meta.path) do 
-      if node ~= my_node then 
-        outpath[#outpath+1]=node
+    if meta.has_attach and not attach[mid] then
+      log('FLOP', 'DEBUG', '%s attach still not retrieved, skipping', tostring(mid))      
+    else
+      local outpath = {}
+      for node, _ in pairs (meta.path) do 
+        if node ~= my_node then 
+          outpath[#outpath+1]=node
+        end
       end
-    end
-    if now-meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
-      meta.emited = meta.emited + 1 --FIXME do inside pending?
-      pending:add(mid, {
-        data=m.data, 
-        path=outpath, 
-        emitter=rong.conf.name, 
-        init_time=meta.init_time,
-      })
+      if now-meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
+        meta.emited = meta.emited + 1 --FIXME do inside pending?
+        pending:add(mid, {
+          data=m.data, 
+          path=outpath, 
+          emitter=rong.conf.name, 
+          has_attach = (attach[mid]~=nil),
+          init_time=meta.init_time,
+        })
+      end
     end
   end
 end
@@ -302,6 +310,7 @@ M.new = function(rong)
     meta.last_seen=now
     meta.emited=0
     meta.seen=1
+    meta.seen_on={}
     meta.path={}
     return n
   end

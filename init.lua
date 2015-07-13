@@ -99,13 +99,14 @@ M.new = function(conf)
     return rong.view[sid]
   end
   
-  M.notificate = function (rong, nid, n)
+  M.notificate = function (rong, nid, data)
     nid = nid or 'nid:'..math.random(2^31)
     log('RONG', 'INFO', 'Publishing notification: "%s"',
       tostring(nid))
-    rong.inv:add(nid, n, true)
-    messages.init_notification(nid)
+    rong.inv:add(nid, data, true)
+    local entry = messages.init_notification(nid)
     log('RONG', 'INFO', '  notifications: %i', rong.inv:len())
+    return entry
   end
 
  

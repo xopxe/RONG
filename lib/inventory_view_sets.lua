@@ -35,6 +35,7 @@ local function make_MessageTable ()
           log('RONG', 'DEBUG', 'Notification %s satisfies Subscription %s: %s',
             key, sid, tostring(matches[s]))
 				end
+        return entry
 			end,
 			del=function(self, key)
 				if rawget(self, key) then
