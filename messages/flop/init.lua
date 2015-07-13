@@ -133,7 +133,7 @@ local notifs_merge = function (rong, notifs)
       local meta = ni.meta
       meta.last_seen = now
       meta.seen=meta.seen+1
-      meta.seen_on[inn.emmiter]=true
+      meta.seen_on[inn.emitter]=inn.attach_on
       for _, n in ipairs(inn.path) do meta.path[n]=true end
       pending:del(nid) --if we were to emit this, don't.
     else	
@@ -147,19 +147,57 @@ local notifs_merge = function (rong, notifs)
         local n = rong.messages.init_notification(nid) --FIXME refactor?
         local meta = n.meta
         meta.init_time = inn.init_time
-        meta.seen_on[inn.emmiter]=true
+        meta.has_attach=inn.has_attach
+        meta.seen_on[inn.emitter]=inn.attach_on
         for _, n in ipairs(inn.path) do meta.path[n]=true end
-
-        -- signal arrival of new notification to subscriptions
-        local matches=n.matches
-        for sid, s in pairs(rong.view.own) do
-          if matches[s] then
-            log('FLOP', 'DEBUG', 'Signalling arrived notification: %s to %s'
-              , tostring(nid), tostring(sid))
-            sched.signal(s, n)
+        
+        --ADD start download of attachments
+        if meta.has_attach and not meta.downloading then
+          log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
+          sched.run(function()
+            meta.downloading=true
+            local selector = require 'lumen.tasks.selector'
+            local node, serv
+            repeat
+              node, serv = next(meta.seen_on, node) --pick one at random
+              local skt = selector.new_tcp_client(serv.ip, serv.port, 0, 0, meta.has_attach, 'stream')
+              skt:send_sync('GET '..nid..' HTTP/1.1\r\n\r\n')
+              print ('++++++++++++', nid)
+              local data, err = skt.stream:read(meta.has_attach)
+              print ('------------', nid, #(data or '') )
+              if data and #data==meta.has_attach then
+                skt:close()
+                conf.attachments[nid]=data
+                -- signal arrival of new notification to subscriptions
+                local matches=n.matches
+                for sid, s in pairs(rong.view.own) do
+                  if matches[s] then
+                    log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
+                      , tostring(nid), tostring(sid))
+                    sched.signal(s, n)
+                  end
+                end
+              else
+                log('FLOP', 'DEBUG', 'Failed attach download %s with %s, will retry', nid, tostring(err))
+                skt:close()
+                sched.sleep(10)
+              end
+            until data
+            meta.downloading=nil
+          end)
+        else
+          -- signal arrival of new notification to subscriptions
+          local matches=n.matches
+          for sid, s in pairs(rong.view.own) do
+            if matches[s] then
+              log('FLOP', 'DEBUG', 'Signalling arrived notification: %s to %s'
+                , tostring(nid), tostring(sid))
+              sched.signal(s, n)
+            end
           end
         end
-
+        
+        
         --make sure table doesn't grow beyond inventory_size
         while inv:len()>conf.inventory_size do
           local mid=ranking_find_replaceable(rong)
@@ -212,10 +250,12 @@ local process_incoming_view = function (rong, view)
           data=m.data, 
           path=outpath, 
           emitter=rong.conf.name, 
-          has_attach = (attach[mid]~=nil),
+          has_attach = attach[mid] and #attach[mid],
+          attach_on = attach[mid] and conf.http_conf or {},
           init_time=meta.init_time,
         })
       end
+      --print ('RRRRRRRRR', mid, attach[mid] and #attach[mid])
     end
   end
 end
@@ -238,6 +278,14 @@ local apply_aging = function (rong)
   end
 end
 
+
+local start_http_server = function(conf)
+  local http_server = require "lumen.tasks.http-server"
+  http_server.serve_static_content_from_table('/', assert(conf.attachments))
+  http_server.init(conf.http_conf)
+end
+  
+  
 M.new = function(rong)  
   local msg = {}
   local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
@@ -315,6 +363,10 @@ M.new = function(rong)
     return n
   end
 
+  if rong.conf.attachments then 
+    start_http_server(rong.conf)
+  end
+    
   return msg
 end
 
