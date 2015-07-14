@@ -158,15 +158,17 @@ local notifs_merge = function (rong, notifs)
             meta.downloading=true
             local selector = require 'lumen.tasks.selector'
             local node, serv
+            local partial = ''
             repeat
               node, serv = next(meta.seen_on, node) --pick one at random
               local skt = selector.new_tcp_client(serv.ip, serv.port, 0, 0, meta.has_attach, 'stream')
-              skt:send_sync('GET '..nid..' HTTP/1.1\r\n\r\n')
+              skt:send_sync('GET '..nid..'?s='..#partial+1..' HTTP/1.1\r\n\r\n')
               print ('++++++++++++', nid)
-              local data, err = skt.stream:read(meta.has_attach)
-              print ('------------', nid, #(data or '') )
-              if data and #data==meta.has_attach then
-                skt:close()
+              local data, err, part = skt.stream:read(meta.has_attach - #partial)
+              partial = partial..(data or part or '')
+              print ('------------', nid, #partial, #(data or '') )
+              skt:close()
+              if #partial==meta.has_attach then
                 conf.attachments[nid]=data
                 -- signal arrival of new notification to subscriptions
                 local matches=n.matches
@@ -178,9 +180,9 @@ local notifs_merge = function (rong, notifs)
                   end
                 end
               else
-                log('FLOP', 'DEBUG', 'Failed attach download %s with %s, will retry', nid, tostring(err))
-                skt:close()
-                sched.sleep(10)
+                log('FLOP', 'DEBUG', 'Failed attach GET %s with %s (got %i bytes), will retry', 
+                  nid, tostring(err), #(part or ''))
+                --sched.sleep(10)
               end
             until data
             meta.downloading=nil
