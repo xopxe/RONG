@@ -8,6 +8,8 @@ local messaging = require 'rong.lib.messaging'
 
 local queue_set = require "rong.lib.queue_set"
 local seen_notifs = queue_set.new()
+local selector = require 'lumen.tasks.selector'
+
 
 local pairs, ipairs, tostring, assert = pairs, ipairs, tostring, assert
 
@@ -100,6 +102,72 @@ local view_merge = function(rong, vi)
   end
 end
 
+local http_downloader = function(rong, n)
+  return function()
+    local conf = assert(rong.conf)
+    local meta = n.meta
+    local nid = n.id
+    meta.downloading=true
+    local partial, partial_len = {}, 0
+    repeat
+      --pick one serv at random
+      local seen_array = {}
+      for _, v in pairs(meta.seen_on) do seen_array[#seen_array+1]=v end
+      local serv = seen_array[math.random(#seen_array)]
+     
+      log('FLOP', 'DEBUG', 'Requesting %s to %s:%s', nid..'?s='..(partial_len+1), 
+        tostring(serv.ip), tostring(serv.port))
+      local skt = selector.new_tcp_client(serv.ip, serv.port, 0, 0, -1, 'stream')
+      skt:send_sync('GET '..nid..'?s='..(partial_len+1)..' HTTP/1.1\r\n\r\n')
+      local header = ''
+      local start
+      repeat
+        local data, err, part = skt.stream:read() --meta.has_attach-#partial)
+        header = header .. (data or '')
+        start = header:match('\r\n\r\n(.*)$')
+        --print ('!!!!!', data, err, header, start)
+      until start or not data
+      if start then
+        partial[#partial+1], partial_len = start, partial_len+#start
+        log('FLOP', 'DEBUG', 'http download started for %s', nid)
+        while partial_len<meta.has_attach do
+          local data, err = skt.stream:read() --meta.has_attach-#partial)
+          --print ('+++++', nid, data and true, err, #(data or ''))
+          if data then 
+            log('FLOP', 'DEBUG', 'Succesfull GET fragment %s (got %i+%i bytes)', 
+              nid, partial_len, #data)
+            partial[#partial+1], partial_len = data, partial_len+#data
+          else
+            log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" (got %i bytes)', 
+              nid, tostring(err), partial_len)
+            break
+          end                  
+        end
+      end
+      skt:close()
+                   
+      if partial_len==meta.has_attach then
+        log('FLOP', 'DEBUG', 'Succesfull GET %s', nid)
+        conf.attachments[nid]=table.concat(partial)
+        -- signal arrival of new notification to subscriptions
+        local matches=n.matches
+        for sid, s in pairs(rong.view.own) do
+          if matches[s] then
+            log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
+              , tostring(nid), tostring(sid))
+            sched.signal(s, n)
+          end
+        end
+      else
+        log('FLOP', 'DEBUG', 'Failed attach GET %s (got %i bytes), will retry', 
+          nid, partial_len)
+        sched.sleep(1)
+      end
+    until partial
+    meta.downloading=nil
+  end
+end
+
 local notifs_merge = function (rong, notifs)
   local inv = rong.inv
   local conf = rong.conf
@@ -133,7 +201,11 @@ local notifs_merge = function (rong, notifs)
       local meta = ni.meta
       meta.last_seen = now
       meta.seen=meta.seen+1
-      meta.seen_on[inn.emitter]=inn.attach_on
+      if not meta.seen_on[inn.emitter] then
+        log('FLOP', 'DEBUG', 'Notif %s seen on %s (%s:%s)', nid, inn.emitter,
+          tostring(inn.attach_on.ip), tostring(inn.attach_on.port))
+        meta.seen_on[inn.emitter]=inn.attach_on
+      end
       for _, n in ipairs(inn.path) do meta.path[n]=true end
       pending:del(nid) --if we were to emit this, don't.
     else	
@@ -142,51 +214,20 @@ local notifs_merge = function (rong, notifs)
         while seen_notifs:len()>conf.max_notifid_tracked do
           seen_notifs:popleft()
         end
-
+        
+        log('FLOP', 'DEBUG', 'New Notif %s seen on %s', nid, inn.emitter)
         inv:add(nid, inn.data, false)
         local n = rong.messages.init_notification(nid) --FIXME refactor?
         local meta = n.meta
         meta.init_time = inn.init_time
         meta.has_attach=inn.has_attach
         meta.seen_on[inn.emitter]=inn.attach_on
-        for _, n in ipairs(inn.path) do meta.path[n]=true end
+        for _, nid in ipairs(inn.path) do meta.path[nid]=true end
         
         --ADD start download of attachments
         if meta.has_attach and not meta.downloading then
           log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
-          sched.run(function()
-            meta.downloading=true
-            local selector = require 'lumen.tasks.selector'
-            local node, serv
-            local partial = ''
-            repeat
-              node, serv = next(meta.seen_on, node) --pick one at random
-              local skt = selector.new_tcp_client(serv.ip, serv.port, 0, 0, meta.has_attach, 'stream')
-              skt:send_sync('GET '..nid..'?s='..#partial+1..' HTTP/1.1\r\n\r\n')
-              print ('++++++++++++', nid)
-              local data, err, part = skt.stream:read(meta.has_attach - #partial)
-              partial = partial..(data or part or '')
-              print ('------------', nid, #partial, #(data or '') )
-              skt:close()
-              if #partial==meta.has_attach then
-                conf.attachments[nid]=data
-                -- signal arrival of new notification to subscriptions
-                local matches=n.matches
-                for sid, s in pairs(rong.view.own) do
-                  if matches[s] then
-                    log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
-                      , tostring(nid), tostring(sid))
-                    sched.signal(s, n)
-                  end
-                end
-              else
-                log('FLOP', 'DEBUG', 'Failed attach GET %s with %s (got %i bytes), will retry', 
-                  nid, tostring(err), #(part or ''))
-                --sched.sleep(10)
-              end
-            until data
-            meta.downloading=nil
-          end)
+          sched.run(http_downloader(rong, n))
         else
           -- signal arrival of new notification to subscriptions
           local matches=n.matches
@@ -253,7 +294,7 @@ local process_incoming_view = function (rong, view)
           path=outpath, 
           emitter=rong.conf.name, 
           has_attach = attach[mid] and #attach[mid],
-          attach_on = attach[mid] and conf.http_conf or {},
+          attach_on = attach[mid] and (conf.http_conf or {}),
           init_time=meta.init_time,
         })
       end
@@ -283,6 +324,7 @@ end
 
 local start_http_server = function(conf)
   local http_server = require "lumen.tasks.http-server"
+  --http_server.HTTP_TIMEOUT = 1
   http_server.serve_static_content_from_table('/', assert(conf.attachments))
   http_server.init(conf.http_conf)
 end
@@ -335,7 +377,7 @@ M.new = function(rong)
 
   msg.incomming = {
     view = process_incoming_view,
-    notifs = process_incoming_notifs
+    notifs = process_incoming_notifs,
   }
 
   msg.init_subscription = function (sid)
