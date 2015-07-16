@@ -22,9 +22,11 @@ local function make_MessageTable ()
           id = key,
           meta = {},
           data = data,
+          own = own,
         }
 				rawset(self, key, entry)
 				if own then own_table:add(key, entry) end
+        --print ('$$$$', key, own, own_table[key])
         
 				--initialize matching cache table
 				local matches={}
@@ -32,7 +34,7 @@ local function make_MessageTable ()
 				inv[key].matches=matches
 				for sid, s in pairs(view) do
           matches[s] = satisfies(data, s.filter) --or nil
-          log('RONG', 'DEBUG', 'Notification %s satisfies Subscription %s: %s',
+          log('RONG', 'DEBUG', 'Notif add: %s satisfies Subscription %s: %s',
             key, sid, tostring(matches[s]))
 				end
         return entry
@@ -70,6 +72,7 @@ local function make_SubscriptionTable ()
           id = key,
           meta = {},
           filter = filter,
+          own = own,
         }
 				rawset(self, key, entry)
 				if own then own_table:add(key, entry) end
@@ -77,6 +80,8 @@ local function make_SubscriptionTable ()
 				--update matching cache table in messages
 				for mid,m in pairs(inv) do
           m.matches[entry] = satisfies(m.data, filter) --or nil
+          log('RONG', 'DEBUG', 'Sub add: %s satisfies Subscription %s: %s',
+            mid, key, tostring(m.matches[entry]))
 				end
         return entry
  			end,
@@ -87,6 +92,8 @@ local function make_SubscriptionTable ()
 				--update matching cache table in messages
 				for mid,m in pairs(inv) do
           m.matches[entry] = satisfies(m.data, filter) --or nil
+          log('RONG', 'DEBUG', 'Sub update: %s satisfies Subscription %s: %s',
+            mid, key, tostring(m.matches[entry]))
 				end
         return entry
       end,

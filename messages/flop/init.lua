@@ -10,6 +10,7 @@ local queue_set = require "rong.lib.queue_set"
 local seen_notifs = queue_set.new()
 local selector = require 'lumen.tasks.selector'
 
+local downloaders = {}
 
 local pairs, ipairs, tostring, assert = pairs, ipairs, tostring, assert
 
@@ -52,12 +53,12 @@ local view_merge = function(rong, vi)
         meta.last_seen = now
         
         if not equal_filters(sl.filter, si.filter) then
-          log('FLOP', 'DEBUG', 'Updating filter to %s', table.concat(si.filter[1]))
+          log('FLOP', 'DETAIL', 'Updating sub %s: filter %s', tostring(sid), table.concat(si.filter[1]))
           view:update(sid, si.filter)
         end
         
         for _, node in ipairs(si.visited) do
-          log('FLOP', 'DEBUG', 'Updating sub %s: visited %s', tostring(sid), tostring(node))
+          log('FLOP', 'DETAIL', 'Updating sub %s: visited %s', tostring(sid), tostring(node))
           meta.visited[node] = true
           if node ~= my_node then 
             meta.q[node] = meta.q[node] or 0.5
@@ -90,7 +91,7 @@ local view_merge = function(rong, vi)
             end
             --]]
             table.sort(sortq, function(a,b) return metaq[a]>metaq[b] end)
-            log('FLOP', 'DEBUG', 'Updating subs %s for %s: sortq [%s]', sid, mid, table.concat(sortq,' '))
+            log('FLOP', 'DETAIL', 'Updating sub %s for %s: sortq [%s]', sid, mid, table.concat(sortq,' '))
             local max = conf.max_path_count
             if max>#sortq then max=#sortq end
             for i=1, max do path[sortq[i]] = true end
@@ -112,12 +113,17 @@ local http_downloader = function(rong, n)
     repeat
       --pick one serv at random
       local seen_array = {}
-      for _, v in pairs(meta.seen_on) do seen_array[#seen_array+1]=v end
+      for k, v in pairs(meta.seen_on) do seen_array[#seen_array+1]={node=k, address=v} end
+      while #seen_array==0 do
+        sched.sleep(1)
+        for k, v in pairs(meta.seen_on) do seen_array[#seen_array+1]={node=k, address=v} end
+      end
       local serv = seen_array[math.random(#seen_array)]
      
-      log('FLOP', 'DEBUG', 'Requesting %s to %s:%s', nid..'?s='..(partial_len+1), 
-        tostring(serv.ip), tostring(serv.port))
-      local skt = selector.new_tcp_client(serv.ip, serv.port, 0, 0, -1, 'stream')
+      log('FLOP', 'DETAIL', 'Requesting %s to %s:%s', nid..'?s='..(partial_len+1), 
+        tostring(serv.address.ip), tostring(serv.address.port))
+      local skt = selector.new_tcp_client(serv.address.ip, serv.address.port, 0, 0, -1, 'stream')
+      skt.stream:set_timeout(conf.http_get_timeout)
       skt:send_sync('GET '..nid..'?s='..(partial_len+1)..' HTTP/1.1\r\n\r\n')
       local header = ''
       local start
@@ -128,42 +134,50 @@ local http_downloader = function(rong, n)
         --print ('!!!!!', data, err, header, start)
       until start or not data
       if start then
-        partial[#partial+1], partial_len = start, partial_len+#start
-        log('FLOP', 'DEBUG', 'http download started for %s', nid)
-        while partial_len<meta.has_attach do
-          local data, err = skt.stream:read() --meta.has_attach-#partial)
-          --print ('+++++', nid, data and true, err, #(data or ''))
-          if data then 
-            log('FLOP', 'DEBUG', 'Succesfull GET fragment %s (got %i+%i bytes)', 
-              nid, partial_len, #data)
-            partial[#partial+1], partial_len = data, partial_len+#data
-          else
-            log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" (got %i bytes)', 
-              nid, tostring(err), partial_len)
-            break
-          end                  
+        local errcode = assert(tonumber(header:match('^%S+ (%d+) ')))
+        if errcode~=200 then
+          log('FLOP', 'DETAIL', 'got err %i on getting %s, removing %s as server', 
+            errcode, nid, serv.node)
+          meta.seen_on[serv.node] = nil
+          start = nil
         end
-      end
-      skt:close()
-                   
-      if partial_len==meta.has_attach then
-        log('FLOP', 'DEBUG', 'Succesfull GET %s', nid)
-        conf.attachments[nid]=table.concat(partial)
-        -- signal arrival of new notification to subscriptions
-        local matches=n.matches
-        for sid, s in pairs(rong.view.own) do
-          if matches[s] then
-            log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
-              , tostring(nid), tostring(sid))
-            sched.signal(s, n)
+        
+        if start then
+          partial[#partial+1], partial_len = start, partial_len+#start
+          log('FLOP', 'DEBUG', 'http download started for %s', nid)
+          while partial_len<meta.has_attach do
+            local data, err = skt.stream:read() --meta.has_attach-#partial)
+            --print ('+++++', nid, data and true, err, #(data or ''))
+            if data then 
+              log('FLOP', 'DEBUG', 'Succesfull GET fragment %s (got %i+%i bytes)', 
+                nid, partial_len, #data)
+              partial[#partial+1], partial_len = data, partial_len+#data
+            else
+              log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" (got %i bytes)', 
+                nid, tostring(err), partial_len)
+              break
+            end                  
           end
         end
-      else
-        log('FLOP', 'DEBUG', 'Failed attach GET %s (got %i bytes), will retry', 
+      end
+      skt:close() 
+      if partial_len<meta.has_attach then
+        log('FLOP', 'DETAIL', 'Failed attach GET %s (got %i bytes), will retry', 
           nid, partial_len)
         sched.sleep(1)
       end
-    until partial
+    until partial_len==meta.has_attach
+    log('FLOP', 'DETAIL', 'Succesfull GET %s', nid)
+    conf.attachments[nid]=table.concat(partial)
+    -- signal arrival of new notification to subscriptions
+    local matches=n.matches
+    for sid, s in pairs(rong.view.own) do
+      if matches[s] then
+        log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
+          , tostring(nid), tostring(sid))
+        sched.signal(s, n)
+      end
+    end
     meta.downloading=nil
   end
 end
@@ -173,6 +187,7 @@ local notifs_merge = function (rong, notifs)
   local conf = rong.conf
   local pending = rong.pending
   local ranking_find_replaceable = rong.ranking_find_replaceable
+  local attach = conf.attachments or {}
 
   local now=sched.get_time()
 
@@ -181,16 +196,22 @@ local notifs_merge = function (rong, notifs)
     local meta = n.meta
     if inv.own[nid] then
       if now - meta.init_time > conf.max_owning_time then
-        log('FLOP', 'DEBUG', 'Purging old own notif: %s', tostring(nid))
+        log('FLOP', 'DETAIL', 'Purging old own notif: %s', tostring(nid))
         inv:del(nid)
+        attach[nid]=nil
+        if downloaders[nid] then downloaders[nid]:kill(); downloaders[nid]=nil end
       elseif meta.emited >= conf.max_ownnotif_transmits then
-        log('FLOP', 'DEBUG', 'Purging own notif on transmit count: %s', tostring(nid))
+        log('FLOP', 'DETAIL', 'Purging own notif on transmit count: %s', tostring(nid))
         inv:del(nid)
+        attach[nid]=nil
+        if downloaders[nid] then downloaders[nid]:kill(); downloaders[nid]=nil end
       end
     else
       if meta.emited >= conf.max_notif_transmits then
-        log('FLOP', 'DEBUG', 'Purging notif on transmit count: %s', tostring(nid))
+        log('FLOP', 'DETAIL', 'Purging notif on transmit count: %s', tostring(nid))
         inv:del(nid)
+        attach[nid]=nil
+        if downloaders[nid] then downloaders[nid]:kill(); downloaders[nid]=nil end
       end
     end
   end
@@ -202,7 +223,7 @@ local notifs_merge = function (rong, notifs)
       meta.last_seen = now
       meta.seen=meta.seen+1
       if not meta.seen_on[inn.emitter] then
-        log('FLOP', 'DEBUG', 'Notif %s seen on %s (%s:%s)', nid, inn.emitter,
+        log('FLOP', 'DETAIL', 'Notif %s seen on %s (%s:%s)', nid, inn.emitter,
           tostring(inn.attach_on.ip), tostring(inn.attach_on.port))
         meta.seen_on[inn.emitter]=inn.attach_on
       end
@@ -215,7 +236,7 @@ local notifs_merge = function (rong, notifs)
           seen_notifs:popleft()
         end
         
-        log('FLOP', 'DEBUG', 'New Notif %s seen on %s', nid, inn.emitter)
+        log('FLOP', 'DETAIL', 'New Notif %s seen on %s', nid, inn.emitter)
         inv:add(nid, inn.data, false)
         local n = rong.messages.init_notification(nid) --FIXME refactor?
         local meta = n.meta
@@ -223,30 +244,37 @@ local notifs_merge = function (rong, notifs)
         meta.has_attach=inn.has_attach
         meta.seen_on[inn.emitter]=inn.attach_on
         for _, nid in ipairs(inn.path) do meta.path[nid]=true end
-        
-        --ADD start download of attachments
-        if meta.has_attach and not meta.downloading then
-          log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
-          sched.run(http_downloader(rong, n))
-        else
-          -- signal arrival of new notification to subscriptions
-          local matches=n.matches
-          for sid, s in pairs(rong.view.own) do
-            if matches[s] then
-              log('FLOP', 'DEBUG', 'Signalling arrived notification: %s to %s'
+               
+        -- signal arrival of new notification to subscriptions
+        local matches=n.matches
+        for sid, s in pairs(rong.view.own) do
+          if matches[s] then
+            if meta.has_attach and not meta.downloading then
+              log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
+              downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
+            else
+              log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
                 , tostring(nid), tostring(sid))
               sched.signal(s, n)
             end
           end
         end
         
-        
         --make sure table doesn't grow beyond inventory_size
-        while inv:len()>conf.inventory_size do
+        if inv:len()>conf.inventory_size then
           local mid=ranking_find_replaceable(rong)
+          --for k, v in pairs(inv) do
+          -- print ('xxxBEFORE', k, v)
+          --end
+          
           inv:del(mid or nid)
+          attach[mid or nid]=nil
+          if downloaders[nid] then downloaders[nid]:kill(); downloaders[nid]=nil end
           log('FLOP', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
             tostring(mid or nid), inv:len())
+          --for k, v in pairs(inv) do
+          --  print ('xxxAFTER', k, v)
+          --end
         end
       end
     end
@@ -288,6 +316,7 @@ local process_incoming_view = function (rong, view)
         end
       end
       if now-meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
+        log('FLOP', 'DETAIL', 'Going to broadcast %s (emited %i times)', tostring(mid), meta.emited)      
         meta.emited = meta.emited + 1 --FIXME do inside pending?
         pending:add(mid, {
           data=m.data, 
@@ -322,9 +351,21 @@ local apply_aging = function (rong)
 end
 
 
-local start_http_server = function(conf)
+local start_http_server = function(rong)
+  local conf = rong.conf
   local http_server = require "lumen.tasks.http-server"
   --http_server.HTTP_TIMEOUT = 1
+  local downlcount =  {}
+  sched.sigrun({http_server.EVENT_DATA_TRANSFERRED}, function(_, path, code, done, err, bytes)
+    if code==200 and done then 
+      downlcount[path] = (downlcount[path] or 0) + 1
+      if downlcount[path]>=(conf.max_chunk_downloads or math.huge) then
+        log('FLOP', 'DETAIL', 'Purging chunk %s on GET count', path)
+        conf.attachments[path] = nil
+        rong.inv:del(path)
+      end
+    end
+  end)
   http_server.serve_static_content_from_table('/', assert(conf.attachments))
   http_server.init(conf.http_conf)
 end
@@ -404,11 +445,32 @@ M.new = function(rong)
     meta.seen=1
     meta.seen_on={}
     meta.path={}
+    seen_notifs:pushright(nid)
     return n
+  end
+  
+  msg.message_scan_for_delivery = function ()
+    log('FLOP', 'DETAIL', 'Reviewing already stored messages')
+    for nid, n in pairs(rong.inv) do
+      local matches=n.matches
+      local meta = n.meta
+      for sid, s in pairs(rong.view.own) do
+        if matches[s] then
+          if meta.has_attach and not meta.downloading then
+            log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
+            downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
+          else
+            log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
+              , tostring(nid), tostring(sid))
+            sched.signal(s, n)
+          end
+        end
+      end
+    end
   end
 
   if rong.conf.attachments then 
-    start_http_server(rong.conf)
+    start_http_server(rong)
   end
     
   return msg

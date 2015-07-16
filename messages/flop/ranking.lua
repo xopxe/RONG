@@ -7,7 +7,7 @@ local function not_on_path(rong)
   local own = inv.own
   local nop = {}
 	for mid, m in pairs(inv) do
-		if not own[m] then
+		if not own[mid] then
       local meta = m.meta
 			if not meta.path[conf.name] then
         nop[mid] = m
@@ -34,12 +34,15 @@ function M.find_fifo_not_on_path (rong)
       
       local em = meta.store_time --meta.init_time      
       
-			if not inv.own[m]
+--print ('?', mid, inv.own[mid], min_ts_mid, min_ts, em, meta.emited )
+      
+			if not inv.own[mid]
 			and (not min_ts_mid or min_ts > em) 
-			and meta.emited > conf.min_n_broadcasts then
+			and meta.emited >= conf.min_n_broadcasts then
 				min_ts_mid, min_ts = mid, em
 			end
 		end
+--print ('yyy not owns not on path', min_ts_mid)
     
     --is all on path, search trough all
     if not min_ts_mid then 
@@ -47,13 +50,15 @@ function M.find_fifo_not_on_path (rong)
         local meta = m.meta
         
         local em = meta.store_time --meta.init_time      
+--print ('?', mid, inv.own[mid], min_ts_mid, min_ts, em, meta.emited )
         
-        if not inv.own[m]
+        if not inv.own[mid]
         and (not min_ts_mid or min_ts > em) 
-        and meta.emited > conf.min_n_broadcasts then
+        and meta.emited >= conf.min_n_broadcasts then
           min_ts_mid, min_ts = mid, em
         end
       end
+--print ('yyy not owns all', min_ts_mid)
     end
     
 		return min_ts_mid
@@ -66,6 +71,7 @@ function M.find_fifo_not_on_path (rong)
 				min_ts_mid, min_ts = mid, meta.init_time
 			end
 		end
+print ('yyy owns', min_ts_mid)
     
 		return min_ts_mid
 	end
