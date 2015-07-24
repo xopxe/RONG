@@ -68,7 +68,8 @@ local view_merge = function(rong, vi)
         local matching = messaging.select_matching( rong, {[sid]=sl} )
         for _, mid in ipairs(matching) do
           if inv.own[mid] then -- solo para own?????? FIXME
-            local path = {}
+            
+            --EXTRACT FROM HERE OUTSIDE for _, mid in ipairs(matching) do ????
             local metaq = assert(meta.q)
             for node, _ in pairs(meta.visited) do
               if node ~= my_node then 
@@ -94,6 +95,7 @@ local view_merge = function(rong, vi)
             log('FLOP', 'DETAIL', 'Updating sub %s for %s: sortq [%s]', sid, mid, table.concat(sortq,' '))
             local max = conf.max_path_count
             if max>#sortq then max=#sortq end
+            local path = {}
             for i=1, max do path[sortq[i]] = true end
             inv[mid].meta.path = path
           end
@@ -113,10 +115,14 @@ local http_downloader = function(rong, n)
     repeat
       --pick one serv at random
       local seen_array = {}
-      for k, v in pairs(meta.seen_on) do seen_array[#seen_array+1]={node=k, address=v} end
+      for k, v in pairs(meta.seen_on) do 
+        seen_array[#seen_array+1]={node=k, address=v} 
+      end
       while #seen_array==0 do
         sched.sleep(1)
-        for k, v in pairs(meta.seen_on) do seen_array[#seen_array+1]={node=k, address=v} end
+        for k, v in pairs(meta.seen_on) do 
+          seen_array[#seen_array+1]={node=k, address=v} 
+        end
       end
       local serv = seen_array[math.random(#seen_array)]
      
@@ -250,7 +256,7 @@ local notifs_merge = function (rong, notifs)
         for sid, s in pairs(rong.view.own) do
           if matches[s] then
             if meta.has_attach and not meta.downloading then
-              log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
+              log('FLOP', 'DETAIL', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
               downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
             else
               log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
@@ -263,18 +269,13 @@ local notifs_merge = function (rong, notifs)
         --make sure table doesn't grow beyond inventory_size
         if inv:len()>conf.inventory_size then
           local mid=ranking_find_replaceable(rong)
-          --for k, v in pairs(inv) do
-          -- print ('xxxBEFORE', k, v)
-          --end
+          local to_remove_id = mid or nid
           
-          inv:del(mid or nid)
-          attach[mid or nid]=nil
-          if downloaders[nid] then downloaders[nid]:kill(); downloaders[nid]=nil end
+          inv:del(to_remove_id)
+          attach[to_remove_id]=nil
+          if downloaders[to_remove_id] then downloaders[to_remove_id]:kill(); downloaders[to_remove_id]=nil end
           log('FLOP', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
-            tostring(mid or nid), inv:len())
-          --for k, v in pairs(inv) do
-          --  print ('xxxAFTER', k, v)
-          --end
+            tostring(to_remove_id), inv:len())
         end
       end
     end
