@@ -57,49 +57,43 @@ local view_merge = function(rong, vi)
           view:update(sid, si.filter)
         end
         
+        local metaq = assert(meta.q)
+        
         for _, node in ipairs(si.visited) do
-          log('FLOP', 'DETAIL', 'Updating sub %s: visited %s', tostring(sid), tostring(node))
+          log('FLOP', 'DETAIL', 'Updating sub %s: visited %s', 
+            tostring(sid), tostring(node))
           meta.visited[node] = true
-          if node ~= my_node then 
-            meta.q[node] = meta.q[node] or 0.5
-          end
+          metaq[node] = metaq[node] or 0.5 --FIXME change for avg q
         end
         
+        for node, _ in pairs(meta.visited) do
+          if node ~= my_node then 
+            local qold = assert(metaq[node]) -- or 0.5    
+            metaq[node] = qold + (1-qold)*conf.q_reinf
+          end
+        end        
+        
+        --[[
         local matching = messaging.select_matching( rong, {[sid]=sl} )
         for _, mid in ipairs(matching) do
           if inv.own[mid] then -- solo para own?????? FIXME
             
-            --EXTRACT FROM HERE OUTSIDE for _, mid in ipairs(matching) do ????
-            local metaq = assert(meta.q)
-            for node, _ in pairs(meta.visited) do
-              if node ~= my_node then 
-                local qold = metaq[node] or 0.5    
-                metaq[node] = qold + (1-qold)*conf.q_reinf
-              end
-            end
-            
+           
             local sortq = {}
             for node, q in pairs(metaq) do 
               sortq[#sortq+1] = node 
               sortq[node] = true
             end 
-            --[[
-            for node, _ in pairs(inv[mid].meta.path) do 
-              if not sortq[node] then 
-                sortq[#sortq+1] = node
-                sortq[node] = true
-              end
-            end
-            --]]
             table.sort(sortq, function(a,b) return metaq[a]>metaq[b] end)
             log('FLOP', 'DETAIL', 'Updating sub %s for %s: sortq [%s]', sid, mid, table.concat(sortq,' '))
             local max = conf.max_path_count
             if max>#sortq then max=#sortq end
             local path = {}
-            for i=1, max do path[sortq[i]] = true end
+            for i=1, max do path[ sortq[i] ] = true end
             inv[mid].meta.path = path
           end
         end
+        --]]
       end
     end
   end
@@ -310,14 +304,38 @@ local process_incoming_view = function (rong, view)
     if meta.has_attach and not attach[mid] then
       log('FLOP', 'DEBUG', '%s attach still not retrieved, skipping', tostring(mid))      
     else
+      
+      --/////////
+      if inv.own[mid] then
+        local sortq = {}
+        for s, v in pairs(m.matches) do
+          if v then 
+            local metaq = assert(s.meta.q)
+            for node, q in pairs(metaq) do 
+              sortq[#sortq+1] = node 
+              sortq[node] = q
+            end 
+          end
+        end
+        table.sort(sortq, function(a,b) return sortq[a]>sortq[b] end)
+        local max = conf.max_path_count
+        if max>#sortq then max=#sortq end
+        local path = {}
+        for i=1, max do path[ sortq[i] ] = true end
+        meta.path = path      
+      end
+      --/////////
+      
       local outpath = {}
       for node, _ in pairs (meta.path) do 
         if node ~= my_node then 
           outpath[#outpath+1]=node
         end
       end
-      if now-meta.last_seen>conf.message_inhibition_window and not skipnotif[mid] then
-        log('FLOP', 'DETAIL', 'Going to broadcast %s (emited %i times)', tostring(mid), meta.emited)      
+      if now-meta.last_seen>conf.message_inhibition_window 
+      and not skipnotif[mid] then
+        log('FLOP', 'DETAIL', 'Going to broadcast %s (emited %i times)',
+          tostring(mid), meta.emited)
         meta.emited = meta.emited + 1 --FIXME do inside pending?
         pending:add(mid, {
           data=m.data, 
