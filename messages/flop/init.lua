@@ -60,10 +60,12 @@ local view_merge = function(rong, vi)
         local metaq = assert(meta.q)
         
         for _, node in ipairs(si.visited) do
-          log('FLOP', 'DETAIL', 'Updating sub %s: visited %s', 
-            tostring(sid), tostring(node))
-          meta.visited[node] = true
-          metaq[node] = metaq[node] or 0.5 --FIXME change for avg q
+          if node ~= my_node then 
+            log('FLOP', 'DETAIL', 'Updating sub %s: visited %s', 
+              tostring(sid), tostring(node))
+            meta.visited[node] = true
+            metaq[node] = metaq[node] or 0.5 --FIXME change for avg q
+          end
         end
         
         for node, _ in pairs(meta.visited) do
@@ -122,49 +124,55 @@ local http_downloader = function(rong, n)
      
       log('FLOP', 'DETAIL', 'Requesting %s to %s:%s', nid..'?s='..(partial_len+1), 
         tostring(serv.address.ip), tostring(serv.address.port))
-      local skt = selector.new_tcp_client(serv.address.ip, serv.address.port, 0, 0, -1, 'stream')
-      skt.stream:set_timeout(conf.http_get_timeout)
-      skt:send_sync('GET '..nid..'?s='..(partial_len+1)..' HTTP/1.1\r\n\r\n')
-      local header = ''
-      local start
-      repeat
-        local data, err, part = skt.stream:read() --meta.has_attach-#partial)
-        header = header .. (data or '')
-        start = header:match('\r\n\r\n(.*)$')
-        --print ('!!!!!', data, err, header, start)
-      until start or not data
-      if start then
-        local errcode = assert(tonumber(header:match('^%S+ (%d+) ')))
-        if errcode~=200 then
-          log('FLOP', 'DETAIL', 'got err %i on getting %s, removing %s as server', 
-            errcode, nid, serv.node)
-          meta.seen_on[serv.node] = nil
-          start = nil
-        end
-        
+      local skt, err = selector.new_tcp_client(serv.address.ip, serv.address.port, 0, 0, -1, 'stream')
+      if not skt then
+        log('FLOP', 'DETAIL', 'Failed to connect to %s:%s with %s, will retry', 
+          tostring(serv.address.ip), tostring(serv.address.port), tostring(err))
+        sched.sleep(1)
+      else
+        skt.stream:set_timeout(conf.http_get_timeout)
+        skt:send_sync('GET '..nid..'?s='..(partial_len+1)..' HTTP/1.1\r\n\r\n')
+        local header = ''
+        local start
+        repeat
+          local data, err, part = skt.stream:read() --meta.has_attach-#partial)
+          header = header .. (data or '')
+          start = header:match('\r\n\r\n(.*)$')
+          --print ('!!!!!', data, err, header, start)
+        until start or not data
         if start then
-          partial[#partial+1], partial_len = start, partial_len+#start
-          log('FLOP', 'DEBUG', 'http download started for %s', nid)
-          while partial_len<meta.has_attach do
-            local data, err = skt.stream:read() --meta.has_attach-#partial)
-            --print ('+++++', nid, data and true, err, #(data or ''))
-            if data then 
-              log('FLOP', 'DEBUG', 'Succesfull GET fragment %s (got %i+%i bytes)', 
-                nid, partial_len, #data)
-              partial[#partial+1], partial_len = data, partial_len+#data
-            else
-              log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" (got %i bytes)', 
-                nid, tostring(err), partial_len)
-              break
-            end                  
+          local errcode = assert(tonumber(header:match('^%S+ (%d+) ')))
+          if errcode~=200 then
+            log('FLOP', 'DETAIL', 'got err %i on getting %s, removing %s as server', 
+              errcode, nid, serv.node)
+            meta.seen_on[serv.node] = nil
+            start = nil
+          end
+          
+          if start then
+            partial[#partial+1], partial_len = start, partial_len+#start
+            log('FLOP', 'DEBUG', 'http download started for %s', nid)
+            while partial_len<meta.has_attach do
+              local data, err = skt.stream:read() --meta.has_attach-#partial)
+              --print ('+++++', nid, data and true, err, #(data or ''))
+              if data then 
+                log('FLOP', 'DEBUG', 'Succesfull GET fragment %s (got %i+%i bytes)', 
+                  nid, partial_len, #data)
+                partial[#partial+1], partial_len = data, partial_len+#data
+              else
+                log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" (got %i bytes)', 
+                  nid, tostring(err), partial_len)
+                break
+              end                  
+            end
           end
         end
-      end
-      skt:close() 
-      if partial_len<meta.has_attach then
-        log('FLOP', 'DETAIL', 'Failed attach GET %s (got %i bytes), will retry', 
-          nid, partial_len)
-        sched.sleep(1)
+        skt:close() 
+        if partial_len<meta.has_attach then
+          log('FLOP', 'DETAIL', 'Failed attach GET %s (got %i bytes), will retry', 
+            nid, partial_len)
+          sched.sleep(1)
+        end
       end
     until partial_len==meta.has_attach
     log('FLOP', 'DETAIL', 'Succesfull GET %s', nid)
@@ -448,6 +456,7 @@ M.new = function(rong)
     meta.store_time = now
     meta.last_seen = now
     meta.seq = 0
+    --meta.visited = {[rong.conf.name] = true}
     meta.visited = {}
     meta.q={}
     return s
