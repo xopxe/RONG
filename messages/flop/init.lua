@@ -12,7 +12,7 @@ local selector = require 'lumen.tasks.selector'
 
 local downloaders = {}
 
-local pairs, ipairs, tostring, assert = pairs, ipairs, tostring, assert
+local pairs, ipairs, tostring, assert, math = pairs, ipairs, tostring, assert, math
 
 local equal_filters = function (a, b)
   for k, v in pairs (a) do
@@ -24,6 +24,10 @@ local equal_filters = function (a, b)
     if not vv or v[1]~=vv[1] or v[2]~=vv[2] or v[3]~=vv[3] then return false end
   end
   return true
+end
+
+local pick_server = function(seen_array)
+  return seen_array[math.random(#seen_array)]
 end
 
 
@@ -120,7 +124,7 @@ local http_downloader = function(rong, n)
           seen_array[#seen_array+1]={node=k, address=v} 
         end
       end
-      local serv = seen_array[math.random(#seen_array)]
+      local serv = assert(pick_server(seen_array))
      
       log('FLOP', 'DETAIL', 'Requesting %s to %s:%s', nid..'?s='..(partial_len+1), 
         tostring(serv.address.ip), tostring(serv.address.port))
@@ -401,6 +405,7 @@ end
 M.new = function(rong)  
   local msg = {}
   local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
+  pick_server = rong.conf.pick_server or pick_server
 
   local ranking_method = rong.conf.ranking_find_replaceable 
   or 'find_fifo_not_on_path'
