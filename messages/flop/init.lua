@@ -191,6 +191,29 @@ local http_downloader = function(rong, n)
       end
     end
     meta.downloading=nil
+    
+    ---[[
+    -- gratuitous announcement, just because we downloaded it.
+    log('FLOP', 'DETAIL', 'PostGET Going to broadcast %s (emited %i times)',
+      tostring(nid), meta.emited)
+    meta.emited = meta.emited + 1 --FIXME do inside pending?
+    local outpath = {}
+    local attach = conf.attachments or {}
+    for node, _ in pairs (meta.path) do 
+      if node ~= rong.conf.name then 
+        outpath[#outpath+1]=node
+      end
+    end
+    rong.pending:add(nid, {
+      data=n.data, 
+      path=outpath, 
+      emitter=rong.conf.name, 
+      has_attach = attach[nid] and #attach[nid],
+      attach_on = attach[nid] and (conf.http_conf or {}),
+      init_time=meta.init_time,
+    }) 
+    --]]
+    
   end
 end
 
