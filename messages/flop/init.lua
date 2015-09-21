@@ -110,7 +110,6 @@ local http_downloader = function(rong, n)
     local conf = assert(rong.conf)
     local meta = n.meta
     local nid = n.id
-    meta.downloading=true
     local partial, partial_len = {}, 0
     repeat
       --pick one serv at random
@@ -160,12 +159,12 @@ local http_downloader = function(rong, n)
               local data, err = skt.stream:read() --meta.has_attach-#partial)
               --print ('+++++', nid, data and true, err, #(data or ''))
               if data then 
-                log('FLOP', 'DEBUG', 'Succesfull GET fragment %s (got %i+%i bytes)', 
-                  nid, partial_len, #data)
+                log('FLOP', 'DEBUG', 'Succesfull GET fragment %s from %s (got %i+%i bytes)', 
+                  nid, serv.node, partial_len, #data)
                 partial[#partial+1], partial_len = data, partial_len+#data
               else
-                log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" (got %i bytes)', 
-                  nid, tostring(err), partial_len)
+                log('FLOP', 'DEBUG', 'Failed GET fragment %s with "%s" from %s (got %i bytes)', 
+                  nid, tostring(err), serv.node, partial_len)
                 break
               end                  
             end
@@ -173,8 +172,8 @@ local http_downloader = function(rong, n)
         end
         skt:close() 
         if partial_len<meta.has_attach then
-          log('FLOP', 'DETAIL', 'Failed attach GET %s (got %i bytes), will retry', 
-            nid, partial_len)
+          log('FLOP', 'DETAIL', 'Failed attach GET %s from %s (got %i bytes), will retry', 
+            nid, serv.node, partial_len)
           sched.sleep(1)
         end
       end
@@ -190,7 +189,6 @@ local http_downloader = function(rong, n)
         sched.signal(s, n)
       end
     end
-    meta.downloading=nil
     
     ---[[
     -- gratuitous announcement, just because we downloaded it.
@@ -214,6 +212,7 @@ local http_downloader = function(rong, n)
     }) 
     --]]
     
+    downloaders[nid]=nil
   end
 end
 
@@ -284,7 +283,7 @@ local notifs_merge = function (rong, notifs)
         local matches=n.matches
         for sid, s in pairs(rong.view.own) do
           if matches[s] then
-            if meta.has_attach and not meta.downloading then
+            if meta.has_attach and not downloaders[nid] then
               log('FLOP', 'DETAIL', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
               downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
             else
@@ -453,22 +452,39 @@ M.new = function(rong)
       subs[sid] = sr
     end
 
-    local ms = assert(encode_f({view={subs=subs}})) --FIXME tamaño!
-
-    if rong.conf.view_skip_list then
-      local ms_candidate
-      local skip = {}
-      for mid, _ in pairs(rong.inv) do
-        skip[#skip+1] = mid
-        ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
-        if #ms_candidate>1472 then break end
+    repeat
+      local ms = assert(encode_f({view={subs={}}})) 
+      local outsub = {}
+      for sid, sr in pairs(subs) do
+        outsub[sid] = sr
+        local ms_candidate = assert(encode_f({view={subs=outsub}}))
+        --print ('XXX', sid, ms_candidate)
+        if #ms_candidate>1472 then 
+          log('FLOP', 'WARN', 'View too long, splitting at %i bytes', #ms)      
+          break 
+        end
         ms = ms_candidate
+        subs[sid] = nil
       end
-    end
+      
+      assert(not( next(outsub)==nil and next(subs)~=nil), 'Failed to split view!' )
+      
+      if rong.conf.view_skip_list then
+        local ms_candidate
+        local skip = {}
+        for mid, _ in pairs(rong.inv) do
+          skip[#skip+1] = mid
+          ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
+          if #ms_candidate>1472 then break end
+          ms = ms_candidate
+        end
+      end
 
-    --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
-    log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
-    rong.net:broadcast( ms )
+      --log('FLOP', 'DEBUG', 'Broadcast view %s (%i bytes)', ms, #ms)
+      log('FLOP', 'DEBUG', 'Broadcast view (%i bytes)', #ms)
+      rong.net:broadcast( ms )
+    until next(subs) == nil
+    
   end
 
   msg.incomming = {
@@ -512,7 +528,7 @@ M.new = function(rong)
       local meta = n.meta
       for sid, s in pairs(rong.view.own) do
         if matches[s] then
-          if meta.has_attach and not meta.downloading then
+          if meta.has_attach and not downloaders[nid] then
             log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
             downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
           else
