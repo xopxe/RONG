@@ -97,7 +97,9 @@ M.new = function(conf)
       tostring(sid))
     rong.view:update(sid, filter, true)
     --messages.init_subscription(sid)
-    messages.message_scan_for_delivery()
+    if messages.message_scan_for_delivery then 
+      messages.message_scan_for_delivery()
+    end
     return rong.view[sid]
   end
   
@@ -107,7 +109,9 @@ M.new = function(conf)
       tostring(nid))
     rong.inv:add(nid, data, true)
     local entry = messages.init_notification(nid)
-    messages.message_scan_for_delivery()
+    if messages.message_scan_for_delivery then 
+      messages.message_scan_for_delivery()
+    end
     log('RONG', 'INFO', '  notifications: %i', rong.inv:len())
     return entry
   end
