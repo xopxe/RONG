@@ -86,7 +86,9 @@ M.new = function(conf)
       tostring(sid))
     rong.view:add(sid, filter, true)
     messages.init_subscription(sid)
-    messages.message_scan_for_delivery()
+    if messages.message_scan_for_delivery then 
+      messages.message_scan_for_delivery()
+    end
     log('RONG', 'INFO', '  subscriptions: %i', rong.view:len())
     return rong.view[sid]
   end
