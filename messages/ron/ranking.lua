@@ -18,8 +18,7 @@ end
 local function find_worsts(rong)
   local inv = rong.inv
   local own = inv.own
-	local worst_id, worst_q
-  local worsts = {}
+	local worst_id, worst_q, worsts
 	for mid, m in pairs(inv) do
 		if not own[mid] then
 			local q = mesage_quality(rong, m)
@@ -33,7 +32,7 @@ local function find_worsts(rong)
 			--if worst_p==0 then break end
 		end
 	end
-	return worsts, worst_q
+	return worsts or {}, worst_q
 end
 
 M.find_replaceable_homogeneous = function (rong) --FIXME
