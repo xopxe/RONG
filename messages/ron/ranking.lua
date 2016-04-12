@@ -18,7 +18,8 @@ end
 local function find_worsts(rong)
   local inv = rong.inv
   local own = inv.own
-	local worst_id, worst_q, worsts
+	local worst_id, worst_q
+  local worsts = {}
 	for mid, m in pairs(inv) do
 		if not own[mid] then
 			local q = mesage_quality(rong, m)

@@ -41,7 +41,7 @@ local notifs_merge = function (rong, notifs)
   local inv = rong.inv
   local conf = rong.conf
   local pending = rong.pending
-  local ranking_find_replaceable = rong.ranking_find_replaceable
+  local ranking_find_replaceable = rong.ranking_find_replaceable or 'find_replaceable_fifo'
   
   local now=sched.get_time()
   
