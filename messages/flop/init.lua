@@ -184,9 +184,12 @@ local http_downloader = function(rong, n)
     local matches=n.matches
     for sid, s in pairs(rong.view.own) do
       if matches[s] then
-        log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
-          , tostring(nid), tostring(sid))
-        sched.signal(s, n)
+        if not meta.delivered then 
+          meta.delivered=true
+          log('FLOP', 'DEBUG', 'Signalling arrived notification w/attach: %s to %s'
+            , tostring(nid), tostring(sid))
+          sched.signal(s, n)
+        end
       end
     end
     
@@ -258,7 +261,7 @@ local notifs_merge = function (rong, notifs)
       meta.seen=meta.seen+1
       if not meta.seen_on[inn.emitter] then
         log('FLOP', 'DETAIL', 'Notif %s seen on %s (%s:%s)', nid, inn.emitter,
-          tostring(inn.attach_on.ip), tostring(inn.attach_on.port))
+          tostring((inn.attach_on or {}).ip), tostring((inn.attach_on or {}).port))
         meta.seen_on[inn.emitter]=inn.attach_on
       end
       for _, n in ipairs(inn.path) do meta.path[n]=true end
@@ -287,9 +290,12 @@ local notifs_merge = function (rong, notifs)
               log('FLOP', 'DETAIL', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
               downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
             else
-              log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
-                , tostring(nid), tostring(sid))
-              sched.signal(s, n)
+              if not meta.delivered then 
+                meta.delivered=true
+                log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
+                  , tostring(nid), tostring(sid))
+                sched.signal(s, n)
+              end
             end
           end
         end
@@ -529,12 +535,15 @@ M.new = function(rong)
       for sid, s in pairs(rong.view.own) do
         if matches[s] then
           if meta.has_attach and not downloaders[nid] then
-            log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach)) 
+            log('FLOP', 'DEBUG', 'Notif %s has attached %s bytes', nid, tostring(meta.has_attach or 0)) 
             downloaders[nid] = sched.run(http_downloader(rong, n)) --ONLY DOWNLOADS FOR OWN
           else
-            log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
-              , tostring(nid), tostring(sid))
-            sched.signal(s, n)
+            if not meta.delivered then 
+              meta.delivered=true
+              log('FLOP', 'INFO', 'Signalling arrived notification: %s to %s'
+                , tostring(nid), tostring(sid))
+              sched.signal(s, n)
+            end
           end
         end
       end
