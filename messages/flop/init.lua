@@ -435,8 +435,7 @@ M.new = function(rong)
   local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   pick_server = rong.conf.pick_server or pick_server
 
-  local ranking_method = rong.conf.ranking_find_replaceable 
-  or 'find_fifo_not_on_path'
+  local ranking_method = rong.conf.ranking_find_replaceable or 'find_fifo_not_on_path'
   rong.ranking_find_replaceable = assert((require 'rong.messages.flop.ranking')[ranking_method])
 
   msg.broadcast_view = function ()

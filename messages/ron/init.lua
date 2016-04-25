@@ -41,7 +41,7 @@ local notifs_merge = function (rong, notifs)
   local inv = rong.inv
   local conf = rong.conf
   local pending = rong.pending
-  local ranking_find_replaceable = rong.ranking_find_replaceable or 'find_replaceable_fifo'
+  local ranking_find_replaceable = rong.ranking_find_replaceable
   
   local now=sched.get_time()
   
@@ -97,8 +97,24 @@ local notifs_merge = function (rong, notifs)
         while inv:len()>conf.inventory_size do
           local mid=ranking_find_replaceable(rong)
           inv:del(mid or nid)
-          log('RON', 'DEBUG', 'Inventory shrinking: %s, now %i long', 
-            tostring(mid or nid), inv:len())
+          log('RON', 'DEBUG', 'Inventory shrinking: %s (between %s and %s), now %i long', 
+            tostring(mid or nid), tostring(mid) or 'none',tostring(nid) or 'none', inv:len())
+          
+          --[[
+          if mid == nil then
+            if inv:len()>conf.inventory_size then 
+              local s = ''
+              local comma = ''
+              for iid, _ in pairs(inv) do
+                s=s..comma..iid
+                comma = ', '
+              end
+              log('RON', 'WARN', 'Could nor shrink inventory: %s',s )
+            end
+            break
+          end
+          --]]
+          
         end
       end
 		end
@@ -159,9 +175,8 @@ M.new = function(rong)
   local msg = {}
   local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   
-  local ranking_method = rong.conf.ranking_find_replaceable 
-  or 'find_replaceable_fifo'
-  rong.ranking_find_replaceable = (require 'rong.messages.ron.ranking')[ranking_method]
+  local ranking_method = rong.conf.ranking_find_replaceable or 'find_replaceable_fifo'
+  rong.ranking_find_replaceable = assert(require 'rong.messages.ron.ranking'[ranking_method])
   
   msg.broadcast_view = function ()
     apply_aging(rong)

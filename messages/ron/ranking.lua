@@ -1,91 +1,84 @@
 local M = {}
 
 local sched = require("lumen.sched")
+local log = require 'lumen.log'
 
 local function mesage_quality(rong, m)
   local view = rong.view
-  
-	local q = 0
-	--accumulated quality for a message
-	for s,_ in pairs(m.matches) do
-		if not view.own[s] then --don't accumulate quality from own subs
-			q = q + s.meta.p 
-		end
-	end
-	return q
+
+  local q = 0
+  --accumulated quality for a message
+  for s, match in pairs(m.matches) do
+    if not view.own[s] and match then --don't accumulate quality from own subs
+      --log('RON', 'WARN', 'AAAA %s %s %s',tostring(m.id), tostring(s.id), tostring(s.meta.p) )
+      q = q + s.meta.p 
+    end
+  end
+  return q
 end
 
 local function find_worsts(rong)
   local inv = rong.inv
   local own = inv.own
-	local worst_id, worst_q, worsts
-	for mid, m in pairs(inv) do
-		if not own[mid] then
-			local q = mesage_quality(rong, m)
-			if not worst_q or q<worst_q then
-				worst_id, worst_q = mid, q
-				worsts = {}
-			end
-			if q == worst_q then
-				worsts[#worsts+1]=mid --keep a list of entries p==min.
-			end
-			--if worst_p==0 then break end
-		end
-	end
-	return worsts or {}, worst_q
+  local worst_id, worst_q, worsts
+  for mid, m in pairs(inv) do
+    if not own[mid] then
+      local q = mesage_quality(rong, m)
+      --log('RON', 'WARN', 'ZZZZ %s %s',tostring(mid), tostring(q) )
+      if not worst_q or q<worst_q then
+        worst_id, worst_q = mid, q
+        worsts = {}
+      end
+      if q == worst_q then
+        worsts[#worsts+1]=mid --keep a list of entries p==min.
+      end
+      --if worst_p==0 then break end
+    end
+  end
+  return worsts, worst_q
 end
 
 M.find_replaceable_homogeneous = function (rong) --FIXME
   local inv = rong.inv
   local conf = rong.conf
-	local now = sched.get_time()
+  local now = sched.get_time()
 
-	if inv.own:len() < conf.reserved_owns then
-		--guarantee for owns satisfied. find replacement between not owns
+  if inv.own:len() < conf.reserved_owns then
+    --guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(messages)
+    local worsts, worst_q=find_worsts(messages)
 
-		local number_of_ranges = conf.number_of_ranges
-		local ranking_window = conf.ranking_window
-		local range_count={}
-		for i=1,number_of_ranges do range_count[i] = {} end
-		--classify in ranges
-		for _, mid in ipairs(worsts) do
-			local m = messages[mid]
-			local age=now-m.meta.init_time 
-			if age > ranking_window then return mid end
-			local range = math.floor(number_of_ranges * (age / ranking_window))+1
-			if range > number_of_ranges then range = number_of_ranges end 
-			local rangelist = range_count[range]
-			rangelist[#rangelist+1] = mid
-		end
-		--find longest range
-		local longest_range, longest_range_i
-		for i=1, number_of_ranges do 
-			local count = #(range_count[i])
-			if not longest_range_i or count > longest_range then
-				longest_range_i, longest_range = i, count
-			end		
-		end
-		--in longest range find most seen
-		local max_seen, max_seen_mid
-		for _, mid in ipairs(range_count[longest_range_i]) do
-			local m = inv[mid]
-			local seen = m.seen
-			if not m.own and (not max_seen_mid or max_seen < seen) then
-				max_seen_mid, max_seen = mid, seen
-			end
-		end
-		
-		return max_seen_mid
-	else --messages.own:len() >= conf.reserved_owns
-		--too much owns. find oldest registered own 
-		local min_ts, min_ts_mid
-		for mid, m in pairs(inv.own) do
-			if not min_ts_mid or min_ts > m.meta.init_time then
-				min_ts_mid, min_ts = mid, m.meta.init_time
-			end
-		end
+    local number_of_ranges = conf.number_of_ranges
+    local ranking_window = conf.ranking_window
+    local range_count={}
+    for i=1,number_of_ranges do range_count[i] = {} end
+    --classify in ranges
+    for _, mid in ipairs(worsts) do
+      local m = messages[mid]
+      local age=now-m.meta.init_time 
+      if age > ranking_window then return mid end
+      local range = math.floor(number_of_ranges * (age / ranking_window))+1
+      if range > number_of_ranges then range = number_of_ranges end 
+      local rangelist = range_count[range]
+      rangelist[#rangelist+1] = mid
+    end
+    --find longest range
+    local longest_range, longest_range_i
+    for i=1, number_of_ranges do 
+      local count = #(range_count[i])
+      if not longest_range_i or count > longest_range then
+        longest_range_i, longest_range = i, count
+      end		
+    end
+    --in longest range find most seen
+    local max_seen, max_seen_mid
+    for _, mid in ipairs(range_count[longest_range_i]) do
+      local m = inv[mid]
+      local seen = m.seen
+      if not m.own and (not max_seen_mid or max_seen < seen) then
+        max_seen_mid, max_seen = mid, seen
+      end
+    end
 
 		return min_ts_mid
 	end	
@@ -94,34 +87,24 @@ end
 M.find_replaceable_seen_rate = function (rong) --FIXME
   local inv = rong.inv
   local conf = rong.conf
-	local now = sched.get_time()
+  local now = sched.get_time()
 
-	if inv.own:len() < conf.reserved_owns then
-		--guarantee for owns satisfied. find replacement between not owns
+  if inv.own:len() < conf.reserved_owns then
+    --guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(inv)
+    local worsts, worst_q=find_worsts(inv)
 
-		--between the worst, find most seen
-		local max_seenrate, max_seenrate_mid
-		for _, mid in ipairs(worsts) do
-			local m = inv[mid]
-			local age = now - m.meta.init_time
-			local seenrate = m.seen / age
-			if not m.own and age > conf.min_time_for_averaging
-			and (not max_seenrate_mid or max_seenrate < seenrate) then
-				max_seenrate_mid, max_seenrate = mid, seenrate
-			end
-		end
-		
-		return max_seenrate_mid
-	else --messages.own:len() >= conf.reserved_owns
-		--too much owns. find oldest registered own 
-		local min_ts, min_ts_mid
-		for mid, m in pairs(messages.own) do
-			if not min_ts_mid or min_ts > m.meta.init_time then
-				min_ts_mid, min_ts = mid, m.meta.init_time
-			end
-		end
+    --between the worst, find most seen
+    local max_seenrate, max_seenrate_mid
+    for _, mid in ipairs(worsts) do
+      local m = inv[mid]
+      local age = now - m.meta.init_time
+      local seenrate = m.seen / age
+      if not m.own and age > conf.min_time_for_averaging
+      and (not max_seenrate_mid or max_seenrate < seenrate) then
+        max_seenrate_mid, max_seenrate = mid, seenrate
+      end
+    end
 
 		return min_ts_mid
 	end	
@@ -130,12 +113,12 @@ end
 M.find_replaceable_seen = function (rong) --FIXME
   local inv = rong.inv
   local conf = rong.conf
-	local now = sched.get_time()
+  local now = sched.get_time()
 
-	if inv.own:len() < conf.reserved_owns then
-		--guarantee for owns satisfied. find replacement between not owns
+  if inv.own:len() < conf.reserved_owns then
+    --guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(inv)
+    local worsts, worst_q=find_worsts(inv)
 
 		--between the worst, find most seen
 		local max_seen, max_seen_mid
@@ -164,13 +147,11 @@ end
 M.find_replaceable_diversity_array = function (rong) --FIXME
   local inv = rong.inv
   local conf = rong.conf
-	if inv.own:len() < conf.reserved_owns then
-		--guarantee for owns satisfied. find replacement between not owns
+  if inv.own:len() < conf.reserved_owns then
+    --guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(inv)
-		--conf.log('looking for a replacement', #worsts, worst_q)
-		
-		local diversity_array = {}
+    local worsts, worst_q=find_worsts(inv)
+    --conf.log('looking for a replacement', #worsts, worst_q)
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
@@ -195,10 +176,8 @@ M.find_replaceable_diversity_array = function (rong) --FIXME
 			inv[min_ts_mid].discard_sample = true
 			if #diversity_array > conf.max_size_diversity_array then				
 				min_ts_mid = diversity_array[math.random(#diversity_array)]
-				conf.log("Diversity array full. Replacing.")
 			else
 				min_ts_mid = nil
-				conf.log("Populating diversity array.")
 			end
 		end
 		
@@ -221,18 +200,18 @@ local myname_hash
 
 -- 
 local function string_hash (str)
-	local temp_hash = 0
-	for i = 1, #str do
-		temp_hash = temp_hash + string.byte(str, i)
-	end
-	return temp_hash
+  local temp_hash = 0
+  for i = 1, #str do
+    temp_hash = temp_hash + string.byte(str, i)
+  end
+  return temp_hash
 end
 
 local function aging_hash (mid)
-	myname_hash = myname_hash or string_hash(conf.my_name)
-	local temp_hash = myname_hash + string_hash(mid)
+  myname_hash = myname_hash or string_hash(conf.my_name)
+  local temp_hash = myname_hash + string_hash(mid)
 
-	return (math.fmod(temp_hash,100) * ((1 - conf.max_aging_slower) / 100) ) + conf.max_aging_slower
+  return (math.fmod(temp_hash,100) * ((1 - conf.max_aging_slower) / 100) ) + conf.max_aging_slower
 end
 
 
@@ -281,13 +260,13 @@ end
 M.find_replaceable_window = function (rong) --FIXME
   local inv = rong.inv
   local conf = rong.conf
-	local now = sched.get_time()
+  local now = sched.get_time()
 
-	if inv.own:len() < conf.reserved_owns then
-		--guarantee for owns satisfied. find replacement between not owns
+  if inv.own:len() < conf.reserved_owns then
+    --guarantee for owns satisfied. find replacement between not owns
 
-		local worsts, worst_q=find_worsts(inv)
-		local candidate_random = {}
+    local worsts, worst_q=find_worsts(inv)
+    local candidate_random = {}
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
@@ -329,30 +308,40 @@ function M.find_replaceable_fifo (rong)
   local inv = rong.inv
   local conf = rong.conf
 
-	if inv.own:len() < conf.reserved_owns then
-		--guarantee for owns satisfied. find replacement between not owns
+  if inv.own:len() < conf.reserved_owns then
+    --guarantee for owns satisfied. find replacement between not owns
 
 		local worsts, worst_q=find_worsts(rong)
 		--conf.log('looking for a replacement', #worsts, worst_q)
+    --log('RON', 'WARN', 'YYYYYYYYYY: %s %s',tostring(worsts), tostring(worst_q))
 
 		--between the worst, find the oldest
 		local min_ts, min_ts_mid
-		for _, mid in ipairs(worsts) do
-			local m = inv[mid]
-      local meta = m.meta
-	
-      local em = meta.store_time --meta.init_time      
-      
-			--conf.log('looking for a replacement ---- ', mid, em)
-			--local em=m.message.notification_id
-			if not inv.own[m]
-			and (not min_ts_mid or min_ts > em) 
-			and meta.emited > conf.min_n_broadcasts then
-				min_ts_mid, min_ts = mid, em
-			end
-		end
+    if worsts then 
+      for _, mid in ipairs(worsts) do
+        local m = inv[mid]
+        local meta = m.meta
+        
+        local em = meta.store_time --meta.init_time      
+        
+        --conf.log('looking for a replacement ---- ', mid, em)
+        --local em=m.message.notification_id
+        if not inv.own[m]
+        and (not min_ts_mid or min_ts > em) 
+        and meta.emited > conf.min_n_broadcasts then
+          min_ts_mid, min_ts = mid, em
+        end
+      end
+    else
+      for mid, m in pairs(inv) do
+        if not min_ts_mid or min_ts > m.meta.init_time then
+          min_ts_mid, min_ts = mid, m.meta.init_time
+        end
+        --log('RON', 'WARN', 'XXXXXXXXXX: %s %s %s',tostring(mid), tostring(min_ts_mid),tostring(min_ts) )
+      end
+    end
 
-		return min_ts_mid
+    return min_ts_mid
 	else --messages.own:len() >= conf.reserved_owns
 		--too much owns. find oldest registered own 
 		local min_ts, min_ts_mid
@@ -367,3 +356,4 @@ function M.find_replaceable_fifo (rong)
 end
 
 return M
+
