@@ -67,11 +67,14 @@ function M.find_fifo_not_on_path (rong)
 		local min_ts, min_ts_mid
 		for mid, m in pairs(inv.own) do
       local meta = m.meta
-			if not min_ts_mid or min_ts > meta.init_time then
-				min_ts_mid, min_ts = mid, meta.init_time
+      --if not min_ts_mid or min_ts > meta.init_time then
+			--	min_ts_mid, min_ts = mid, meta.init_time
+			--end
+      if not min_ts_mid or min_ts > meta.store_time then
+				min_ts_mid, min_ts = mid, meta.store_time
 			end
 		end
-print ('yyy owns', min_ts_mid)
+--print ('yyy owns', min_ts_mid)
     
 		return min_ts_mid
 	end

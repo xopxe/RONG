@@ -279,6 +279,7 @@ local notifs_merge = function (rong, notifs)
         local meta = n.meta
         meta.init_time = inn.init_time
         meta.has_attach=inn.has_attach
+        meta.store_time = now
         meta.seen_on[inn.emitter]=inn.attach_on
         for _, nid in ipairs(inn.path) do meta.path[nid]=true end
                

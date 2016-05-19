@@ -82,6 +82,7 @@ local notifs_merge = function (rong, notifs)
         inv:add(nid, data, false)
         local n=rong.messages.init_notification(nid) --FIXME refactor?
         n.meta.init_time = inn.init_time
+        n.meta.store_time = now
         
         -- signal arrival of new notification to subscriptions
         local matches=n.matches
@@ -100,8 +101,8 @@ local notifs_merge = function (rong, notifs)
           log('RON', 'DEBUG', 'Inventory shrinking: %s (between %s and %s), now %i long', 
             tostring(mid or nid), tostring(mid) or 'none',tostring(nid) or 'none', inv:len())
           
-          --[[
           if mid == nil then
+            --[[
             if inv:len()>conf.inventory_size then 
               local s = ''
               local comma = ''
@@ -111,9 +112,9 @@ local notifs_merge = function (rong, notifs)
               end
               log('RON', 'WARN', 'Could nor shrink inventory: %s',s )
             end
+            --]]
             break
           end
-          --]]
           
         end
       end

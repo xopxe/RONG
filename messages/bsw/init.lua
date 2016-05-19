@@ -44,6 +44,7 @@ local notif_merge = function (rong, notif)
     n.meta.hops = reg.hops
     n.meta.copies = reg.copies
     n.meta.init_time = reg.init_time
+    n.meta.store_time = now
 
     -- signal arrival of new notification to subscriptions
     local matches=n.matches
@@ -89,7 +90,7 @@ end
 --in a task to insure atomicity
 sched.sigrun ( {EVENT_TRIGGER_EXCHANGE}, function (_, rong, view)
   local inv = rong.inv
-  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
+  local encode_f, decode_f = assert(rong.conf.encode_f), assert(rong.conf.decode_f)
   
   if inv:len()==0 then
     log('BSW', 'DEBUG', 'Sender not connecting, nothing to offer')
@@ -195,7 +196,7 @@ end)
 -- Get handler for reading a transfer from socket
 local get_receive_transfer_handler = function (rong)
   local inv = rong.inv
-  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
+  local encode_f, decode_f = assert(rong.conf.encode_f), assert(rong.conf.decode_f)
   return function(_, skt, err)
     if skt==nil then
       log('BSW', 'ERROR', 'Socket error: %s', tostring(err))
@@ -300,6 +301,8 @@ end
 M.new = function(rong)  
   local conf = rong.conf
   local inv = rong.inv
+  local encode_f, decode_f = assert(rong.conf.encode_f), assert(rong.conf.decode_f)
+  
   local msg = {}
 
   rong.neighbor = {}
@@ -350,6 +353,7 @@ M.new = function(rong)
     local n = assert(inv[nid])
     local meta = n.meta
     meta.init_time=now
+    meta.store_time=now
     meta.last_seen=now
     meta.hops=0
     meta.copies = conf.start_copies
@@ -359,8 +363,11 @@ M.new = function(rong)
     while inv:len() > rong.conf.inventory_size do
       local oldest, oldesttime = nil, math.huge
       for mid, m in pairs (inv) do
-        if m.meta.init_time < oldesttime then
-          oldest, oldesttime = mid, m.meta.init_time
+        --if m.meta.init_time < oldesttime then
+        --  oldest, oldesttime = mid, m.meta.init_time
+        --end
+        if m.meta.store_time < oldesttime then
+          oldest, oldesttime = mid, m.meta.store_time
         end
       end
       log('BSW', 'DEBUG', 'Purging notification on full buffer: %s (%i copies)', 

@@ -162,6 +162,12 @@ local get_receive_transfer_handler = function (rong)
   local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
   local inv = rong.inv
   return function(_, skt, err)
+    if skt==nil then
+      log('EPIDEMIC', 'ERROR', 'Socket error: %s', tostring(err))
+      print(debug.traceback())
+      os.exit()
+    end
+    
     log('EPIDEMIC', 'DEBUG', 'Receiver accepted: %s:%s', skt:getpeername())
     sched.run( function() -- removed, only single client
       skt.stream:set_timeout(5, 5)
@@ -193,12 +199,12 @@ local get_receive_transfer_handler = function (rong)
       
       local sreq = assert(encode_f({req = req}))
       
-      log('EPIDEMIC', 'DEBUG', 'Receiver REQ built (%s): %i notifs, %i bytes', 
-        skt:getpeername(), #req, #sreq+1)  
+      log('EPIDEMIC', 'DEBUG', 'Receiver REQ built: %i notifs, %i bytes (%s:%s)', 
+         #req, #sreq+1, skt:getpeername())
       local ok, errsend, length = skt:send_sync(sreq..'\n')  
       if not ok then
-        log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed (%s): %s', 
-          skt:getpeername(), tostring(errsend))
+        log('EPIDEMIC', 'DEBUG', 'Receiver REQ send failed: %s (%s:%s)', 
+          tostring(errsend), skt:getpeername())
         skt:close(); return
       end
       
@@ -253,6 +259,8 @@ end
 
 M.new = function(rong)  
   local conf = rong.conf
+  local encode_f, decode_f = rong.conf.encode_f, rong.conf.decode_f
+
   local msg = {}
 
   rong.neighbor = {}
