@@ -12,7 +12,9 @@ local selector = require 'lumen.tasks.selector'
 
 local downloaders = {}
 
-local pairs, ipairs, tostring, assert, math = pairs, ipairs, tostring, assert, math
+local community_label_seen = {}
+
+local pairs, ipairs, tostring, assert, math, table = pairs, ipairs, tostring, assert, math, table
 
 local equal_filters = function (a, b)
   for k, v in pairs (a) do
@@ -47,14 +49,19 @@ local view_merge = function(rong, vi)
         meta.q = {}
         meta.init_time = si.init_time
         meta.store_time = now
+        meta.seen_count = 0
+        meta.updated_count = 0
       end
       meta = sl.meta
+      
+      meta.seen_count = meta.seen_count + 1
       
       if not meta.seq or meta.seq < si.seq then     
         log('FLOP', 'DEBUG', 'Updating sub %s: seq %s-\>%i', tostring(sid), tostring(meta.seq), si.seq)
         meta.seq = si.seq
         meta.visited = {[my_node] = true}
         meta.last_seen = now
+        meta.updated_count = meta.updated_count + 1
         
         if not equal_filters(sl.filter, si.filter) then
           log('FLOP', 'DETAIL', 'Updating sub %s: filter %s', tostring(sid), table.concat(si.filter[1]))
@@ -274,17 +281,26 @@ local notifs_merge = function (rong, notifs)
         end
         
         log('FLOP', 'DETAIL', 'New Notif %s seen on %s', nid, inn.emitter)
-        inv:add(nid, inn.data, false)
+        inv:add(nid, inn.data, false)         
         local n = rong.messages.init_notification(nid) --FIXME refactor?
         local meta = n.meta
         meta.init_time = inn.init_time
         meta.has_attach=inn.has_attach
         meta.store_time = now
         meta.seen_on[inn.emitter]=inn.attach_on
-        for _, nid in ipairs(inn.path) do meta.path[nid]=true end
-               
-        -- signal arrival of new notification to subscriptions
         local matches=n.matches
+        
+        for _, nid in ipairs(inn.path) do meta.path[nid]=true end
+        for sid, s in pairs(rong.view) do
+          if matches[s] then
+            s.meta.matching_seen = (s.meta.matching_seen or 0) + 1
+            if meta.path[conf.name] then 
+              s.meta.matching_seen_on_path = (s.meta.matching_seen_on_path or 0) + 1
+            end
+          end
+        end
+        
+        -- signal arrival of new notification to subscriptions
         for sid, s in pairs(rong.view.own) do
           if matches[s] then
             if meta.has_attach and not downloaders[nid] then
@@ -318,11 +334,62 @@ local notifs_merge = function (rong, notifs)
 
 end
 
+local label_propagation_incomming = function (rong, label_in)
+  --keep a limited set of recently seen labels
+  while #community_label_seen >= rong.conf.community_detection_window do
+    table.remove(community_label_seen, 1)
+  end
+  community_label_seen[#community_label_seen+1] = label_in
+  
+  --count labels
+  local label_count = {}
+  for _, label in ipairs(community_label_seen) do
+    if not label_count[label] then
+      label_count[label] = 1
+      label_count[#label_count+1] = label
+    else
+      label_count[label] = label_count[label] + 1
+    end
+  end
+  
+  ---[[
+  do
+    local out = {}
+    for _, l in pairs (community_label_seen) do
+      out[#out+1] = l
+    end
+    log('FLOP', 'DETAIL', 'COMMUNITY LABEL SEEN %s', table.concat(out,','))
+  end
+  --]]
+
+  
+  ---[[
+  do
+    local out = {}
+    for l, c in pairs (label_count) do
+      if type(l) == 'string' then
+        out[#out+1] = l..'='..tostring(c)
+      end
+    end
+    log('FLOP', 'DETAIL', 'COMMUNITY LABEL COUNT %s', table.concat(out,','))
+  end
+  --]]
+  
+  --pick on of the highest counted
+  table.sort(label_count, function(a, b) return label_count[a]>label_count[b] end)
+  rong.community_label = label_count[1] or rong.community_label
+end
+
 local process_incoming_view = function (rong, view)
   local now = sched.get_time()
   local conf = rong.conf
   local my_node = rong.conf.name
   local attach = conf.attachments or {}
+
+  --community detection
+  if conf.community_detection_window then
+    label_propagation_incomming( rong, view.community )
+  end
 
   --routing
   view_merge( rong, view.subs )
@@ -438,6 +505,10 @@ M.new = function(rong)
 
   local ranking_method = rong.conf.ranking_find_replaceable or 'find_fifo_not_on_path'
   rong.ranking_find_replaceable = assert((require 'rong.messages.flop.ranking')[ranking_method])
+  
+  if rong.conf.community_detection_window then
+    rong.community_label = rong.conf.name
+  end
 
   msg.broadcast_view = function ()
     apply_aging(rong)
@@ -463,7 +534,7 @@ M.new = function(rong)
       local outsub = {}
       for sid, sr in pairs(subs) do
         outsub[sid] = sr
-        local ms_candidate = assert(encode_f({view={subs=outsub}}))
+        local ms_candidate = assert(encode_f({view={subs=outsub, community=rong.community_label}}))
         --print ('XXX', sid, ms_candidate)
         if #ms_candidate>1472 then 
           log('FLOP', 'WARN', 'View too long, splitting at %i bytes', #ms)      
@@ -480,7 +551,7 @@ M.new = function(rong)
         local skip = {}
         for mid, _ in pairs(rong.inv) do
           skip[#skip+1] = mid
-          ms_candidate = assert(encode_f({view={subs=subs, skip=skip}})) 
+          ms_candidate = assert(encode_f({view={subs=subs, community=rong.community_label, skip=skip}})) 
           if #ms_candidate>1472 then break end
           ms = ms_candidate
         end
